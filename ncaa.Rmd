@@ -4,10 +4,71 @@ author: "Christoph, Carol, Chris"
 date: "3/30/2017"
 output: html_document
 ---
+For Christoph:
+```{r}
+setwd("~/Yale/Semester 4/STAT 230 Intro Data Analysis/NCAA Final Project_GitHub")
+x <- read.csv("ncaa-academics-data.csv")
+```
+
 
 ```{r}
-print("Hello World")
+library(nycflights13)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+```{r}
+
+for(i in 1:ncol(x)) {
+  if(class(x[,i]) == "integer") {
+    x[which(x[,i] < 0), i]  <- NA
+  }
+  if(class(x[,i]) == "numeric") {
+    x[which(x[,i] < 0), i]  <- NA
+  }
+}
 
 ```
+
+
+```{r}
+university_list = unique(x[,2])
+p_list = rep(NA, length(unique(x[,2])))
+slope_list = rep(NA, length(unique(x[,2])))
+
+for(j in 1:length(unique(x[,2]))) {
+  school_data <-  filter(x, SCHOOL_NAME == university_list[j])
+  school_data <-  select(school_data, ends_with("RETENTION"), - matches("FOURYEAR_RETENTION"), matches("SPORT_CODE"))
+  
+  ret_data <- data_frame(year = rep(c(2004:2014), each = nrow(school_data)), retention = rep(rep(NA, 11), each = nrow(school_data)), sport_code = rep(school_data$SPORT_CODE, 11))
+  
+  for(k in 0:10) {
+    for(i in 1:nrow(school_data)) {
+      ret_data$retention[i + k*nrow(school_data)] <- select(school_data, contains(toString(ret_data$year[i + k*nrow(school_data)])))[i,]
+    }
+  }
+  
+ # plot(retention ~ year, data = ret_data, col = ret_data$sport_code, pch = 16)
+  if(sum(!is.na(ret_data$retention))> nrow(school_data)) {
+    model <- lm(retention ~ year, data = ret_data)
+    coef(summary(model))
+    p_list[j] <- coef(summary(model))[2,4]
+    slope_list[j] <- coef(summary(model))[2,1]
+  }
+}
+
+
+```
+
+
+```{r}
+hist(log(p_list))
+hist(slope_list)
+```
+
+
+
+
 
 
