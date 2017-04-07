@@ -4,22 +4,22 @@ author: "Christoph, Carol, Chris"
 date: "3/30/2017"
 output: html_document
 ---
-For Christoph:
+
 ```{r}
+# For Christoph: replace with own directives
 setwd("~/Yale/Semester 4/STAT 230 Intro Data Analysis/NCAA Final Project_GitHub")
 x <- read.csv("ncaa-academics-data.csv")
 ```
 
 
 ```{r}
-library(nycflights13)
 library(dplyr)
 library(tidyr)
 library(ggplot2)
 ```
 
 ```{r}
-
+## Removes all negative values form numeric data columns and replaces them with 'NA'
 for(i in 1:ncol(x)) {
   if(class(x[,i]) == "integer") {
     x[which(x[,i] < 0), i]  <- NA
@@ -29,29 +29,34 @@ for(i in 1:ncol(x)) {
   }
 }
 
+head(x)
 ```
 
 
 ```{r}
-university_list = unique(x[,2])
-p_list = rep(NA, length(unique(x[,2])))
-slope_list = rep(NA, length(unique(x[,2])))
+university_list = unique(x[,2]) # list of universities
+p_list = rep(NA, length(unique(x[,2]))) # list of slope p-values
+slope_list = rep(NA, length(unique(x[,2]))) # list of slopes
 
-for(j in 1:length(unique(x[,2]))) {
+for(j in 1:length(university_list)) {
   school_data <-  filter(x, SCHOOL_NAME == university_list[j])
-  school_data <-  select(school_data, ends_with("RETENTION"), - matches("FOURYEAR_RETENTION"), matches("SPORT_CODE"))
+  school_data <-  select(school_data, ends_with("SCORE"), - matches("FOURYEAR_SCORE"), matches("SPORT_NAME"))
   
-  ret_data <- data_frame(year = rep(c(2004:2014), each = nrow(school_data)), retention = rep(rep(NA, 11), each = nrow(school_data)), sport_code = rep(school_data$SPORT_CODE, 11))
-  
-  for(k in 0:10) {
-    for(i in 1:nrow(school_data)) {
-      ret_data$retention[i + k*nrow(school_data)] <- select(school_data, contains(toString(ret_data$year[i + k*nrow(school_data)])))[i,]
-    }
-  }
-  
- # plot(retention ~ year, data = ret_data, col = ret_data$sport_code, pch = 16)
-  if(sum(!is.na(ret_data$retention))> nrow(school_data)) {
-    model <- lm(retention ~ year, data = ret_data)
+score_data  <-  school_data %>% gather(year, Score, X2014_SCORE:X2004_SCORE)
+
+year_list  <-  2014:2004;
+for(i in 1:length(year_list)) {
+  score_data$year[grep(toString(year_list[i]),score_data$year)] <- year_list[i]
+}
+
+score_data$year <- as.numeric(score_data$year)
+
+# ggplot(score_data, aes(x= year, y = Score, col = SPORT_NAME)) + geom_point()
+
+
+
+  if(sum(!is.na(score_data$Score))> nrow(school_data)) {
+    model <- lm(Score ~ year, data = score_data)
     coef(summary(model))
     p_list[j] <- coef(summary(model))[2,4]
     slope_list[j] <- coef(summary(model))[2,1]
@@ -67,7 +72,78 @@ hist(log(p_list))
 hist(slope_list)
 ```
 
+# Opens College Scorecard Data
 
+```{r}
+myapikey <- "eKqUWPk1BM6EPjy9yIzqdLrbEGy6bTMgh8iSYtvv"
+
+library(rscorecard) # an API to interface with score_card
+sc_key(myapikey) # sc_ stands for score card
+```
+
+Example use: Get admission rates and SAT scores for all schools in CT:
+
+```{r}
+college_data <- sc_init() %>% # must start every search with sc_init
+    sc_select(UNITID, HIGHDEG, CONTROL, REGION, LATITUDE, LONGITUDE, ADM_RATE, SAT_AVG, UGDS, COSTT4_A, AVGFACSAL,C150_4,RET_FT4) %>% # names of columns we want
+  sc_year(2014) %>% # can only give one year
+  sc_get() # actually get the query
+
+dim(df)
+```
+```{r}
+#How do you find the documentation?
+#Use duckduckgo.com to search '"college scprecard" api documentation'
+#Documentation report and data ductionary
+
+View(df)
+#Want to restrict search to doctoral universities
+#CCBasic is Carnigeclassification Basic
+
+```
+
+
+```{r}
+  unique(x$SCHOOL_ID)
+  head(college_data)
+  college_data <- rename(college_data, SCHOOL_ID = unitid)
+  data <- left_join(x, college_data, by = "SCHOOL_ID")
+  data <- select(data, -starts_with("FOUR"))
+  
+  
+```
+
+```{r}
+
+```
+
+
+```{r}
+ggplot(data, aes(x = longitude, y = latitude)) + geom_point() + aes(col = as.factor(region))
+```
+
+```{r}
+lat_list = rep(NA, length(unique(data$SCHOOL_ID)))
+long_list = rep(NA, length(unique(data$SCHOOL_ID)))
+count <-  2
+lat_list[1] <- data$latitude[1]
+long_list[1] <- data$longitude[1]
+
+for(i in 1:(nrow(data)-1)) {
+  if(data$SCHOOL_ID[i] != data$SCHOOL_ID[i+1]) 
+    {
+    lat_list[count]  <-  data$latitude[i+1]
+    long_list[count]  <-  data$longitude[i+1]
+    count <-  count + 1
+    }
+    
+}
+
+lldata <- data.frame(longitude = long_list, latitude = lat_list, delta_score = slope_list)
+ggplot(lldata, aes(x = longitude, y = latitude)) + geom_point() + aes(col = slope_list) + scale_color_gradient("slope_list", low = "green", high = "purple")
+
+max(slope_list)
+```
 
 
 
