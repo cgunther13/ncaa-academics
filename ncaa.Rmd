@@ -7,10 +7,13 @@ output: html_document
 
 ```{r}
 # For Christoph: replace with own directives
-setwd("~/Yale/Semester 4/STAT 230 Intro Data Analysis/NCAA Final Project_GitHub")
-x <- read.csv("ncaa-academics-data.csv")
+# setwd("~/Yale/Semester 4/STAT 230 Intro Data Analysis/NCAA Final Project_GitHub")
 ```
 
+```{r}
+x <- read.csv("ncaa-academics-data.csv", as.is = TRUE)
+head(x)
+```
 
 ```{r}
 library(dplyr)
@@ -19,84 +22,94 @@ library(ggplot2)
 ```
 
 ```{r}
-## Removes all negative values form numeric data columns and replaces them with 'NA'
-for(i in 1:ncol(x)) {
-  if(class(x[,i]) == "integer") {
-    x[which(x[,i] < 0), i]  <- NA
-  }
-  if(class(x[,i]) == "numeric") {
-    x[which(x[,i] < 0), i]  <- NA
-  }
-}
+## Replace all negative values form numeric data columns with NA
+#for(i in 1:ncol(x)) {
+#  if(class(x[,i]) == "integer" || class(x[,i]) == "numeric") {
+#    x[which(x[,i] < 0), i]  <- NA
+#  }
+#}
+
+# I think this does the same thing
+x[x < 0] <- NA
 
 head(x)
 ```
 
 
 ```{r}
-university_list = unique(x[,2]) # list of universities
-p_list = rep(NA, length(unique(x[,2]))) # list of slope p-values
-slope_list = rep(NA, length(unique(x[,2]))) # list of slopes
+universities = unique(x[,2]) # list of all 385 universities
 
-for(j in 1:length(university_list)) {
-  school_data <-  filter(x, SCHOOL_NAME == university_list[j])
-  school_data <-  select(school_data, ends_with("SCORE"), - matches("FOURYEAR_SCORE"), matches("SPORT_NAME"))
+for(j in 1:length(universities)) {
+  school_data <- x %>% filter(SCHOOL_NAME == universities[j]) %>% 
+      select(ends_with("SCORE"), -FOURYEAR_SCORE, matches("SPORT_NAME"))
+}
+score_data <- school_data %>% gather(year, score, X2014_SCORE:X2004_SCORE)
+```
   
-score_data  <-  school_data %>% gather(year, Score, X2014_SCORE:X2004_SCORE)
+```{r}
+#year_list <-2014:2004
+#for(i in 1:length(year_list)) {
+#  scores$year[grep(toString(year_list[i]), score_data$year)] <- year_list[i]
+#}
+#scores$year <- as.numeric(scores$year)
 
-year_list  <-  2014:2004;
-for(i in 1:length(year_list)) {
-  score_data$year[grep(toString(year_list[i]),score_data$year)] <- year_list[i]
-}
+# I think this does the same thing
+score_data$year <- as.numeric(substr(score_data$year, 2, 5))
+```
 
-score_data$year <- as.numeric(score_data$year)
-
-# ggplot(score_data, aes(x= year, y = Score, col = SPORT_NAME)) + geom_point()
-
-
-
-  if(sum(!is.na(score_data$Score))> nrow(school_data)) {
-    model <- lm(Score ~ year, data = score_data)
-    coef(summary(model))
-    p_list[j] <- coef(summary(model))[2,4]
-    slope_list[j] <- coef(summary(model))[2,1]
-  }
-}
-
-
+# Why is there no data before 2007??
+```{r}
+ggplot(score_data, aes(x = year, y = score, col = SPORT_NAME)) + geom_jitter()
 ```
 
 
 ```{r}
+m1 <- lm(score ~ year, data = score_data)
+
+# What are you doing here?
+p_list = rep(NA, length(unique(x[,2]))) # list of slope p-values
+slope_list = rep(NA, length(unique(x[,2]))) # list of slopes
+for(j in 1:length(universities)) {
+  if(sum(!is.na(score_data$score)) > nrow(school_data)) {
+    m1 <- lm(score ~ year, data = score_data)
+    coef(summary(m1))
+    p_list[j] <- coef(summary(m1))[2,4]
+    slope_list[j] <- coef(summary(m1))[2,1]
+  }
+}
+
 hist(log(p_list))
 hist(slope_list)
 ```
 
-# Opens College Scorecard Data
+
+## College Scorecard Data
 
 ```{r}
 myapikey <- "eKqUWPk1BM6EPjy9yIzqdLrbEGy6bTMgh8iSYtvv"
-
-library(rscorecard) # an API to interface with score_card
-sc_key(myapikey) # sc_ stands for score card
+library(rscorecard) # score_card API
+sc_key(myapikey)
 ```
 
 Example use: Get admission rates and SAT scores for all schools in CT:
 
 ```{r}
-college_data <- sc_init() %>% # must start every search with sc_init
-    sc_select(UNITID, HIGHDEG, CONTROL, REGION, LATITUDE, LONGITUDE, ADM_RATE, SAT_AVG, UGDS, COSTT4_A, AVGFACSAL,C150_4,RET_FT4) %>% # names of columns we want
-  sc_year(2014) %>% # can only give one year
-  sc_get() # actually get the query
-
-dim(df)
+college_data <- sc_init() %>% # Note: must start every search with sc_init
+    # names of columns we want
+    sc_select(UNITID, HIGHDEG, CONTROL, REGION, LATITUDE, LONGITUDE, ADM_RATE, 
+              SAT_AVG, UGDS, COSTT4_A, AVGFACSAL,C150_4,RET_FT4) %>% 
+    # can only give one year  
+    sc_year(2014) %>% 
+    # actually get the query  
+    sc_get() 
 ```
+
 ```{r}
 #How do you find the documentation?
-#Use duckduckgo.com to search '"college scprecard" api documentation'
-#Documentation report and data ductionary
+#Use duckduckgo.com to search '"college scorecard" api documentation'
+#Documentation report and data dictionary
 
-View(df)
+#View(df)
 #Want to restrict search to doctoral universities
 #CCBasic is Carnigeclassification Basic
 
@@ -104,19 +117,12 @@ View(df)
 
 
 ```{r}
-  unique(x$SCHOOL_ID)
-  head(college_data)
-  college_data <- rename(college_data, SCHOOL_ID = unitid)
-  data <- left_join(x, college_data, by = "SCHOOL_ID")
-  data <- select(data, -starts_with("FOUR"))
-  
-  
+unique(x$SCHOOL_ID)
+head(college_data)
+college_data <- rename(college_data, SCHOOL_ID = unitid)
+data <- left_join(x, college_data, by = "SCHOOL_ID")
+data <- select(data, -starts_with("FOUR"))
 ```
-
-```{r}
-
-```
-
 
 ```{r}
 ggplot(data, aes(x = longitude, y = latitude)) + geom_point() + aes(col = as.factor(region))
