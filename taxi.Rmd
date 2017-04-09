@@ -56,12 +56,18 @@ library(leaps)
 * `trip_distance`      
 * `vendor_id` 
 
+# Clean up Variables
+
+Create `tip_pct`
 ```{r}
 taxi <- taxi %>% mutate(tip_pct = (tip_amount / fare_amount) * 100)
+
+# Clean up: remove observation where tip_pct > 100
+taxi <- taxi[-c(which(taxi$tip_pct == "NaN"), which(taxi$tip_pct == "Inf")),]
+taxi <- taxi[taxi$tip_pct <= 100,]
 ```
 
-* `tip_pct`: tip amount as a percentage of the total fare
-
+Create `pickup_hour` and `dropoff_hour`
 ```{r}
 taxi$pickup_hour <- substr(taxi$pickup_datetime, 12, 13)
 taxi$pickup_hour <- as.numeric(taxi$pickup_hour)
@@ -69,25 +75,22 @@ taxi$dropoff_hour <- substr(taxi$dropoff_datetime, 12, 13)
 taxi$dropoff_hour <- as.numeric(taxi$dropoff_hour)
 ```
 
-* `pickup_hour`: hour of the day when the passenger was picked up
-* `dropoff_hour`: hour of the day when the passenger was droppd off
+`passenger_count`
+```{r}
+taxi <- taxi[taxi$passenger_count > 0,]
+factor_passengers <- factor(taxi$passenger_count)
+```
 
-## Plot of tip by passenger count
+## Plot of Percentage Tipped by Number of Passengers
 
 ```{r}
-ggplot(taxi, aes(x = as.factor(passenger_count), y = tip_pct)) + geom_boxplot()
+ggplot(taxi, aes(x = factor_passengers, y = tip_pct)) + 
+  geom_boxplot() +
+  labs(title = "Percentage Tipped by Number of Passengers", x = 
+    "Number of Passengers", y = "Percentage Tipped")
 ```
 
 ## All-Subsets Regression to Predict `tip_pct`
-
-Even smaller dataset to test with:
-```{r}
-#set.seed(230)
-#randoms <- sample(1:nrow(taxi), 10)
-#taxi_subset <- taxi[randoms,]
-```
-
-
 
 ```{r}
 r1 = regsubsets(tip_pct ~ pickup_hour + pickup_latitude + pickup_longitude +  
