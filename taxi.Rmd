@@ -8,14 +8,12 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+## Read in taxi data through Socrata API and subset a random 10% of rows
 
 ```{r}
 #library("RSocrata")
 #taxi <- read.socrata("https://data.cityofnewyork.us/resource/2yzn-sicd.json?$where=pickup_datetime between #'2015-05-06T00:00:00.000' and '2015-05-07T00:00:00.000'&payment_type=1")
-```
 
-```{r}
 #set.seed(230)
 #randoms <-sample(1:nrow(taxi), 28857)
 #taxi2 <- taxi[randoms,]
@@ -23,8 +21,58 @@ knitr::opts_chunk$set(echo = TRUE)
 #write.csv(taxi2, "taxi_data.csv", row.names = FALSE)
 ```
 
-test
+## Read in subset of taxi data
+
 ```{r}
-ggplot(taxi2, aes(passenger_count, tip_amount)) + geom_point()
+taxi <- read.csv("taxi_data.csv")
+```
+
+## Libraries
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(leaps)
+```
+
+## Variables
+`dropoff_datetime`   
+`dropoff_latitude`   
+`dropoff_longitude` 
+`extra`              
+`fare_amount`        
+`mta_tax`           
+`passenger_count`    
+`payment_type`       
+`pickup_datetime`   
+`pickup_latitude`    
+`pickup_longitude`   
+`rate_code`         
+`store_and_fwd_flag` 
+`tip_amount`         
+`tolls_amount`      
+`total_amount`       
+`trip_distance`      
+`vendor_id` 
+
+```{r}
+taxi <- taxi %>% mutate(tip_pct = (tip_amount / total_amount) * 100)
+```
+
+
+## Plot of tip by passenger count
+
+```{r}
+# Convert `passenger_count` from integer to factor
+taxi$passenger_count <- as.factor(taxi$passenger_count)
+
+
+ggplot(taxi, aes(x = passenger_count, y = tip_pct)) + geom_boxplot()
+```
+
+## All-Subsets Regression to Predict `tip_pct`
+
+```{r}
+
 ```
 
