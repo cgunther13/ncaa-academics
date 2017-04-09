@@ -24,7 +24,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Read in subset of taxi data
 
 ```{r}
-taxi <- read.csv("taxi_data.csv")
+taxi <- read.csv("taxi_data.csv", as.is = TRUE)
 ```
 
 ## Libraries
@@ -36,43 +36,83 @@ library(leaps)
 ```
 
 ## Variables
-`dropoff_datetime`   
-`dropoff_latitude`   
-`dropoff_longitude` 
-`extra`              
-`fare_amount`        
-`mta_tax`           
-`passenger_count`    
-`payment_type`       
-`pickup_datetime`   
-`pickup_latitude`    
-`pickup_longitude`   
-`rate_code`         
-`store_and_fwd_flag` 
-`tip_amount`         
-`tolls_amount`      
-`total_amount`       
-`trip_distance`      
-`vendor_id` 
+* `dropoff_datetime`   
+* `dropoff_latitude`   
+* `dropoff_longitude` 
+* `extra`              
+* `fare_amount`        
+* `mta_tax`: $0.50 tax on taxi rides          
+* `passenger_count`: number of passengers in the taxi
+* `payment_type`: whether customer paid with cash or credit card. Always 1 
+(credit card) in the subset of the data we are analyzing   
+* `pickup_datetime`   
+* `pickup_latitude`    
+* `pickup_longitude`   
+* `rate_code`         
+* `store_and_fwd_flag` 
+* `tip_amount`         
+* `tolls_amount`      
+* `total_amount`       
+* `trip_distance`      
+* `vendor_id` 
 
 ```{r}
-taxi <- taxi %>% mutate(tip_pct = (tip_amount / total_amount) * 100)
+taxi <- taxi %>% mutate(tip_pct = (tip_amount / fare_amount) * 100)
 ```
 
+* `tip_pct`: tip amount as a percentage of the total fare
+
+```{r}
+taxi$pickup_hour <- substr(taxi$pickup_datetime, 12, 13)
+taxi$pickup_hour <- as.numeric(taxi$pickup_hour)
+taxi$dropoff_hour <- substr(taxi$dropoff_datetime, 12, 13)
+taxi$dropoff_hour <- as.numeric(taxi$dropoff_hour)
+```
+
+* `pickup_hour`: hour of the day when the passenger was picked up
+* `dropoff_hour`: hour of the day when the passenger was droppd off
 
 ## Plot of tip by passenger count
 
 ```{r}
-# Convert `passenger_count` from integer to factor
-taxi$passenger_count <- as.factor(taxi$passenger_count)
-
-
-ggplot(taxi, aes(x = passenger_count, y = tip_pct)) + geom_boxplot()
+ggplot(taxi, aes(x = as.factor(passenger_count), y = tip_pct)) + geom_boxplot()
 ```
 
 ## All-Subsets Regression to Predict `tip_pct`
 
+Even smaller dataset to test with:
 ```{r}
-
+#set.seed(230)
+#randoms <- sample(1:nrow(taxi), 10)
+#taxi_subset <- taxi[randoms,]
 ```
+
+
+
+```{r}
+r1 = regsubsets(tip_pct ~ pickup_hour + pickup_latitude + pickup_longitude +  
+                  dropoff_hour + dropoff_latitude + dropoff_longitude + 
+                  fare_amount + passenger_count + trip_distance + tolls_amount + 
+                  extra + vendor_id, data = taxi, nvmax = 10)
+r1s <- summary(r1)
+r1s$which
+plot(r1s$rsq)
+
+plot(r1s$cp)
+plot(r1, scale="Cp")
+
+which.min(r1s$cp)
+bestwhich <- r1s$which[which.min(r1s$cp),]
+best_vars <- names(bestwhich[bestwhich == TRUE])
+best_vars <- best_vars[-1]
+best_vars
+```
+
+```{r}
+mbest <- lm(tip_pct ~ pickup_latitude + dropoff_hour + fare_amount + 
+            trip_distance + tolls_amount + extra, data = taxi)
+summary(mbest)
+```
+
+## Interaction Plots
 
