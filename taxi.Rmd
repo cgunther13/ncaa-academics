@@ -12,16 +12,16 @@ knitr::opts_chunk$set(echo = TRUE)
 ## R Markdown
 
 ```{r}
-library("RSocrata")
-taxi <- read.socrata("https://data.cityofnewyork.us/resource/2yzn-sicd.json?$where=pickup_datetime between '2015-05-06T00:00:00.000' and '2015-05-07T00:00:00.000'&payment_type=1")
+#library("RSocrata")
+#taxi <- read.socrata("https://data.cityofnewyork.us/resource/2yzn-sicd.json?$where=pickup_datetime between #'2015-05-06T00:00:00.000' and '2015-05-07T00:00:00.000'&payment_type=1")
 ```
 
 ```{r}
-set.seed(230)
-randoms <-sample(1:nrow(taxi), 28857)
-taxi2 <- taxi[randoms,]
+#set.seed(230)
+#randoms <-sample(1:nrow(taxi), 28857)
+#taxi2 <- taxi[randoms,]
 
-write.csv(taxi2, "taxi_data.csv", row.names = FALSE)
+#write.csv(taxi2, "taxi_data.csv", row.names = FALSE)
 ```
 
 
