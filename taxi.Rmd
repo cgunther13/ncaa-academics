@@ -24,7 +24,7 @@ knitr::opts_chunk$set(echo = TRUE)
 #write.csv(taxi2, "taxi_data.csv", row.names = FALSE)
 ```
 
-
+test
 ```{r}
 ggplot(taxi2, aes(passenger_count, tip_amount)) + geom_point()
 ```
