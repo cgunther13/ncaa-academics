@@ -4,16 +4,85 @@ author: "Christoph, Carol, Chris"
 date: "4/8/2017"
 output: html_document
  ----
+ 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Read in taxi data through Socrata API and subset a random 10% of rows
+### 2015 Yellow Taxi Trip Data - NYC Open Data
+https://data.cityofnewyork.us/Transportation/2015-Yellow-Taxi-Trip-Data/ba8s-jw6u
 
+"This dataset includes trip records from all trips completed in yellow taxis 
+in NYC from January to June in 2015.  Records include fields capturing pick-up 
+and drop-off dates/times, pick-up and drop-off locations, trip distances, 
+itemized fares, rate types, payment types, and driver-reported passenger counts. 
+The data used in the attached datasets were collected and provided to the NYC 
+Taxi and Limousine Commission (TLC) by technology providers authorized under the 
+Taxicab Passenger Enhancement Program (TPEP). The trip data was not created by 
+the TLC, and TLC makes no representations as to the accuracy of these data."" 
+
+This dataset is huge (146,087,462 rows and 5GB), and too big for our computers 
+to work with, so we decided to load in data for 1 day. We chose May 6, for no 
+reason in partiocular, except that it is a non-holiday weekday. This was still
+a huge amount of data however, so we filtered it further by selecting only the 
+rides where passengers paid with a credit card (because these are the only rides
+with tip data, which we are interested in exploring), and then took a random 10%
+of the rides.
+
+
+### Variables
+* `dropoff_datetime`: date and time when meter was disengaged   
+* `dropoff_latitude`: latitude where the meter was disengaged
+* `dropoff_longitude`: longitude where the meter was disengaged
+* `extra`: Miscellaneous extras and surcharges (0 = no charge, 0.5 = $0.50 rush 
+           hour charge, 1 = $1 overnight charge)
+* `fare_amount`: time-and-distance fare calculated by the meter
+* `mta_tax`: $0.50 tax on taxi rides        
+* `passenger_count`: number of passengers in the vehicle
+* `payment_type`: how the passenger paid for the trip. Note: Always 1 (credit 
+                  card) in the subset of the data we are analyzing. Only about 
+                  1/3 of the data was not 1
+* `pickup_datetime`: date and time when meter was engaged   
+* `pickup_latitude`: latitude where the meter was engaged   
+* `pickup_longitude`: longitude where the meter was engaged   
+* `rate_code`: final rate code in effect at the end of the trip (1 = Standard 
+               rate, 2 = JFK, 3 = Newark 4 = Nassau or Westchester, 5 = 
+               Negotiated Fare, 6 = Group Ride)       
+* `store_and_fwd_flag`: whether the trip record was held in vehicle memory 
+                        before sending to the vendor because the vehicle did not 
+                        have a connection to the server (Y = yes, N = no)
+* `tip_amount`: tip paid. Note: Only calculated for credit card tips      
+* `tolls_amount`: total amount of all tolls paid in the trip
+* `total_amount`: total amount charged to passengers (fare + tip + extra + 
+                  mta_tax)
+* `trip_distance`: elapsed trip distance in miles
+* `vendor_id`: technology vendor that provided the record (CMT = Creative Mobile 
+               Technologies, VTS = VeriFone, DDS = Digital Dispatch Systems)
+
+
+### Research Questions
+We are particularly interested in exploring 3 features of this taxi trips 
+dataset: time (`dropoff_datetime` and `pickup_datetime`), location 
+(`dropoff_latitude`, `dropoff_longitude`, `pickup_latitude`, and
+`pickup_longitude`), and payments, specifically tips (`tip_amount`). 
+
+  * When and where are the most expensive trips?
+  * Where (what direction) do people travel when?
+    * Goldman Sachs and Citi pickup times?
+  * What factors predict how much (as a percentage of their total fare) a person 
+    tips?
+
+
+### Code
+
+Read in 2015 Yellow Taxi data through Socrata API for May 6, 2015
+(Commented out because it takes a long time to run, and we saved the data we 
+need once in taxi_data.csv)
 ```{r}
 #library("RSocrata")
 #taxi <- read.socrata("https://data.cityofnewyork.us/resource/2yzn-sicd.json?$where=pickup_datetime between #'2015-05-06T00:00:00.000' and '2015-05-07T00:00:00.000'&payment_type=1")
 
+# Random 10% of rows
 #set.seed(230)
 #randoms <-sample(1:nrow(taxi), 28857)
 #taxi2 <- taxi[randoms,]
@@ -21,13 +90,10 @@ knitr::opts_chunk$set(echo = TRUE)
 #write.csv(taxi2, "taxi_data.csv", row.names = FALSE)
 ```
 
-## Read in subset of taxi data
-
+Read in smaller subset of taxi data
 ```{r}
 taxi <- read.csv("taxi_data.csv", as.is = TRUE)
 ```
-
-## Libraries
 
 ```{r}
 library(dplyr)
@@ -35,30 +101,9 @@ library(ggplot2)
 library(leaps)
 ```
 
-## Variables
-* `dropoff_datetime`   
-* `dropoff_latitude`   
-* `dropoff_longitude` 
-* `extra`              
-* `fare_amount`        
-* `mta_tax`: $0.50 tax on taxi rides          
-* `passenger_count`: number of passengers in the taxi
-* `payment_type`: whether customer paid with cash or credit card. Always 1 
-(credit card) in the subset of the data we are analyzing   
-* `pickup_datetime`   
-* `pickup_latitude`    
-* `pickup_longitude`   
-* `rate_code`         
-* `store_and_fwd_flag` 
-* `tip_amount`         
-* `tolls_amount`      
-* `total_amount`       
-* `trip_distance`      
-* `vendor_id` 
+## Cleaning
 
-# Clean up Variables
-
-Create `tip_pct`
+`tip_pct`
 ```{r}
 taxi <- taxi %>% mutate(tip_pct = (tip_amount / fare_amount) * 100)
 
@@ -67,7 +112,7 @@ taxi <- taxi[-c(which(taxi$tip_pct == "NaN"), which(taxi$tip_pct == "Inf")),]
 taxi <- taxi[taxi$tip_pct <= 100,]
 ```
 
-Create `pickup_hour` and `dropoff_hour`
+`pickup_hour` and `dropoff_hour`
 ```{r}
 taxi$pickup_hour <- substr(taxi$pickup_datetime, 12, 13)
 taxi$pickup_hour <- as.numeric(taxi$pickup_hour)
@@ -81,7 +126,7 @@ taxi <- taxi[taxi$passenger_count > 0,]
 factor_passengers <- factor(taxi$passenger_count)
 ```
 
-## Plot of Percentage Tipped by Number of Passengers
+## Plot of `pct_tip` by `passenger_count`
 
 ```{r}
 ggplot(taxi, aes(x = factor_passengers, y = tip_pct)) + 
@@ -99,10 +144,12 @@ r1 = regsubsets(tip_pct ~ pickup_hour + pickup_latitude + pickup_longitude +
                   extra + vendor_id, data = taxi, nvmax = 10)
 r1s <- summary(r1)
 r1s$which
-plot(r1s$rsq)
+plot(r1s$rsq, main = "R-squareds of Models with Increasingly More Variables", 
+     ylab = "R-sqaured")
 
-plot(r1s$cp)
-plot(r1, scale="Cp")
+plot(r1s$cp, main = "Mallows' Cp of Models with Increasingly More Variables", 
+     ylab = "Cp")
+plot(r1, scale="Cp", main = "Most Important Predictors in Different Size Models")
 
 which.min(r1s$cp)
 bestwhich <- r1s$which[which.min(r1s$cp),]
@@ -111,11 +158,44 @@ best_vars <- best_vars[-1]
 best_vars
 ```
 
+We decided to perform an all-subsets regression to predict `tip_pct` in order to
+hone in on the strogest predictors of `tip_pct`. Obviously, we decided to leave
+`tip_amount` and `fare_amount` out of the list of predictors, because they are 
+included in the formula that determines `tip_pct` and would therefore by 
+trivially correlated. 
+
+The first plot shows the different r-squared values in models with increasingly
+more predictors. As we expect, the r-squared value increases as we add more 
+predictors, but flattens out around 5%. This is a very low r-squared value.
+
+The second plot shows the different values of Mallow's Cp in models with 
+increasignly more predictors. Here, Cp drops until 6, and then levels out 
+at about 0.
+
+Finally, the third, culminating plot uses Mallow's Cp to determine which set of 
+variables is the "best" (most efficient combination of variables) for predicting 
+`pct_tip`. The top row shows this best model, and shows that the most important 
+variables for predicting `pct_tip` are `pickup_hour`, `fare_amount`, 
+`tolls_amount`, and `extra`. Thus, we can build a model using these predictors:
+
 ```{r}
-mbest <- lm(tip_pct ~ pickup_latitude + dropoff_hour + fare_amount + 
-            trip_distance + tolls_amount + extra, data = taxi)
+mbest <- lm(tip_pct ~ pickup_hour + fare_amount + tolls_amount + extra, 
+            data = taxi)
 summary(mbest)
 ```
+
+Thus we see that `extra` has the largest effect on the amount a passenger 
+decides to tip, on average giving a 1.77% higher tip for a $1 increase in extra 
+fees. We hypothesize that this could be because the passenger feels like the 
+driver had to work extra hard to compelte a trip in rush hour or overnight, and 
+therefore the passenger wants to reward the driver for going the extra mile.
+
+`toll_amount` also has a fairly large impact, as on average passengers give a 1%
+higher tip for a $1 increase in tolls. At first we thought that the passenger 
+felt a duty to repay the toll in the tip, but it turns out that the passenger is
+already responsible for the toll, so they are actually paying even more. This 
+seems counterintuitive, but could be due to the passenger wanting to repay the
+driver for going through the log jam at a toll booth. 
 
 ## Interaction Plots
 
