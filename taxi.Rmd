@@ -133,6 +133,8 @@ Read in smaller subset of taxi data
 taxi <- read.csv("taxi_data.csv", as.is = TRUE)
 ```
 
+## Libraries
+
 ```{r}
 library(dplyr)
 library(ggplot2)
@@ -143,16 +145,16 @@ library(mapproj)
 
 ## Cleaning
 
-`tip_pct`
+Create `tip_pct`
 ```{r}
 taxi <- taxi %>% mutate(tip_pct = (tip_amount / fare_amount) * 100)
 
-# Clean up: remove observation where tip_pct > 100
+# Remove observation where tip_pct > 100
 taxi <- taxi[-c(which(taxi$tip_pct == "NaN"), which(taxi$tip_pct == "Inf")),]
 taxi <- taxi[taxi$tip_pct <= 100,]
 ```
 
-`pickup_hour` and `dropoff_hour`
+Create `pickup_hour` and `dropoff_hour`
 ```{r}
 taxi$pickup_hour <- substr(taxi$pickup_datetime, 12, 13)
 taxi$pickup_hour <- as.numeric(taxi$pickup_hour)
@@ -160,17 +162,16 @@ taxi$dropoff_hour <- substr(taxi$dropoff_datetime, 12, 13)
 taxi$dropoff_hour <- as.numeric(taxi$dropoff_hour)
 ```
 
-`passenger_count`
-```{r}
-taxi <- taxi[taxi$passenger_count > 0,]
-factor_passengers <- factor(taxi$passenger_count)
-```
-
-`trip_distance`
+Remove `trip_distance` = 0
 ```{r}
 taxi <- taxi[!(taxi$trip_distance == 0),]
 ```
 
+Remove `passenger_count` = 0 and create factor variable for passenger count
+```{r}
+taxi <- taxi[taxi$passenger_count > 0,]
+factor_passengers <- as.factor(taxi$passenger_count)
+```
 
 ## Plot of `pct_tip` by `passenger_count`
 
@@ -180,7 +181,6 @@ ggplot(taxi, aes(x = factor_passengers, y = tip_pct)) +
   labs(title = "Percentage Tipped by Number of Passengers", x = 
     "Number of Passengers", y = "Percentage Tipped")
 ```
-
 
 ## All-Subsets Regression to Predict `tip_pct`
 
