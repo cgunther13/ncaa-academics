@@ -254,91 +254,6 @@ driver for going through the log jam at a toll booth.
 
 ## Location Plots
 
-```{r}
-#remove rows with abnormal dropoff longitudes
-#ggplot(taxi, aes(x = dropoff_longitude, y = dropoff_latitude)) + geom_point()
-library(ggmap)
-library(mapproj)
-
-MAXLAT <- 40.85
-MINLAT <- 40.675
-MAXLONG <- -73.85
-MINLONG <- -74.1
-pos <- filter(taxi, pickup_longitude < MAXLONG, pickup_longitude > MINLONG, pickup_latitude < MAXLAT, pickup_latitude > MINLAT)
-
-
-map <- get_map(location = c(MINLONG,MINLAT, MAXLONG, MAXLAT), source = "stamen", maptype = "watercolor")
-ggmap(map) + geom_point(aes(x = pickup_longitude, y = pickup_latitude), data = pos, alpha = 0.3, col = "red")
-```
-
-```{r}
-GRIDLENGTH <- 100 # Number of Columns in Grid
-long_unit <- (MAXLONG - MINLONG)/GRIDLENGTH
-lat_unit <- (MAXLAT - MINLAT)/GRIDLENGTH
-
-lat_bound <- seq(from = MINLAT, to = MAXLAT, by = lat_unit)
-long_bound <- seq(from = MINLONG, to = MAXLONG, by = long_unit)
-
-plot(pos$pickup_latitude ~ pos$pickup_longitude)
-for(i in 1:GRIDLENGTH) {
-  abline(h = lat_bound[i], lwd = 1,  col = rgb(0.1, 0.1, 0.1, alpha = 0.3))
-  abline(v = long_bound[i], lwd = 1, col = rgb(0.1, 0.1, 0.1, alpha = 0.3))
-}
-
-```
-
-```{r}
-pos$lat_region <- rep(NA, nrow(pos))
-pos$long_region <- rep(NA, nrow(pos))
-length(lat_bound)
-  for(i in 1:nrow(pos)) {
-    for(k in 1:(GRIDLENGTH)){
-      if(pos$pickup_latitude[i] >= lat_bound[k] & pos$pickup_latitude[i] < lat_bound[k + 1]){         pos$lat_region[i] <- k
-        break
-      } # end if
-    } # end for k
-    for(k in 1:(GRIDLENGTH)){
-      if(pos$pickup_longitude[i] >= long_bound[k] & pos$pickup_long[i] < long_bound[k + 1]) {
-        pos$long_region[i] <- k
-        break
-      }# end if
-    }# end for k
-  }# end for i
-
-```
-
-```{r}
-grouped <- group_by(pos, lat_region, long_region) %>% summarize(lat_dir = mean(dropoff_latitude - pickup_latitude), long_dir = mean(dropoff_longitude - pickup_longitude), count = n())
-
-
-grouped$lat_min = rep(NA, nrow(grouped))
-grouped$lat_max = rep(NA, nrow(grouped))
-grouped$long_min = rep(NA, nrow(grouped))
-grouped$long_max = rep(NA, nrow(grouped))
-
-for(i in 1:nrow(grouped)) {
-  grouped$lat_min[i] <- lat_bound[grouped$lat_region[i]]
-  grouped$lat_max[i] <- lat_bound[grouped$lat_region[i] + 1]
-  grouped$long_min[i] <- long_bound[grouped$long_region[i]]
-  grouped$long_max[i] <- long_bound[grouped$long_region[i] + 1]
-}
-
-
-ggplot(data = grouped, aes(xmin = long_min, xmax = long_max, ymin = lat_min, ymax = lat_max, fill = count)) + geom_rect() + scale_fill_gradient("Number of Rides", low = "red", high = "white")
-```
-
-```{r}
-#install.packages("rworldmap")
-#install.packages("ggmap")
-#install.packages("mapproj")
-library(ggmap)
-library(mapproj)
-map <- get_map(location = c(MINLONG,MINLAT, MAXLONG, MAXLAT), source = "stamen", maptype = "watercolor")
-
-ggmap(map)+ geom_rect(aes(x = long_min, y = long_max, xmin = long_min, xmax = long_max, ymin = lat_min, ymax = lat_max, fill = count), data = grouped) + scale_fill_gradientn(colors = rainbow(7)) + labs(title = "Number of Taxi Pickups by Region", x = expression(italic("Longitude")~"(degrees)"),y = expression(italic("Latitude")~"(degrees)"))
-```
-
-
 Direction of Motion Plot
 
 ```{r}
@@ -349,35 +264,37 @@ MINLAT <- 40.675
 MAXLONG <- -73.85
 MINLONG <- -74.1
 pos <- filter(taxi, pickup_longitude < MAXLONG, pickup_longitude > MINLONG, pickup_latitude < MAXLAT, pickup_latitude > MINLAT) # selects all taxi rides whose pickup was within the specified region. Stores these rides to a new data frame 'pos'
-pos <- filter(pos, dropoff_longitude != 0, dropoff_latitude!= 0)
-pos <- filter(pos, dropoff_longitude != pickup_longitude, dropoff_latitude != pickup_latitude)
 
-map <- get_map(location = c(MINLONG,MINLAT, MAXLONG, MAXLAT), source = "stamen", maptype = "watercolor")
-ggmap(map) + geom_point(aes(x = pickup_longitude, y = pickup_latitude), data = pos, alpha = 0.3, col = "red") # plots pickup sites
+pos <- filter(pos, dropoff_longitude != 0, dropoff_latitude!= 0) # removes all rows with dropoff longitude or latitude equal to zero.
+
+pos <- filter(pos, dropoff_longitude != pickup_longitude, dropoff_latitude != pickup_latitude) # removes all rows where pickup and dropoff locations are the same.
+
+map <- get_map(location = c(MINLONG,MINLAT, MAXLONG, MAXLAT), source = "stamen", maptype = "watercolor") # loads google map of desired region
+
+ggmap(map) + geom_point(aes(x = pickup_longitude, y = pickup_latitude), data = pos, alpha = 0.3, col = "red") # plots pickup sites superimposed on map
 ```
 
 ```{r}
 GRIDLENGTH <- 25 # Number of Columns in Grid
-long_unit <- (MAXLONG - MINLONG)/GRIDLENGTH
-lat_unit <- (MAXLAT - MINLAT)/GRIDLENGTH
+long_unit <- (MAXLONG - MINLONG)/GRIDLENGTH # unit of longitude grid
+lat_unit <- (MAXLAT - MINLAT)/GRIDLENGTH # unit of latitude grid
 
-lat_bound <- seq(from = MINLAT, to = MAXLAT, by = lat_unit)
-long_bound <- seq(from = MINLONG, to = MAXLONG, by = long_unit)
+lat_bound <- seq(from = MINLAT, to = MAXLAT, by = lat_unit) # list of latitude grid boundary values
+long_bound <- seq(from = MINLONG, to = MAXLONG, by = long_unit) # list of longitude grid boundary values
 
 plot(pos$pickup_latitude ~ pos$pickup_longitude)
 for(i in 1:GRIDLENGTH) {
   abline(h = lat_bound[i], lwd = 1,  col = rgb(0.1, 0.1, 0.1, alpha = 0.3))
   abline(v = long_bound[i], lwd = 1, col = rgb(0.1, 0.1, 0.1, alpha = 0.3))
-} # plots grid, as divided
+} # plots grid as specified, with pickup and dropoff locations superimposed over it.
 ```
 
 
 ```{r}
-# Identifies what grid squares each pickup location is located in. Lat_region gives vertical grid number. Long_region gives horizontal grid number
+# This subsequent code identifies what grid squares each pickup location is located in. Lat_region gives vertical grid number. Long_region gives horizontal grid number
 
-pos$lat_region <- rep(NA, nrow(pos)) 
-pos$long_region <- rep(NA, nrow(pos))
-length(lat_bound)
+pos$lat_region <- rep(NA, nrow(pos)) # creates column lat_region in 'pos' 
+pos$long_region <- rep(NA, nrow(pos)) # creates column long_region in 'pos'
   for(i in 1:nrow(pos)) {
     for(k in 1:(GRIDLENGTH)){
       if(pos$pickup_latitude[i] >= lat_bound[k] & pos$pickup_latitude[i] < lat_bound[k + 1]){         pos$lat_region[i] <- k
@@ -398,15 +315,17 @@ head(pos)
 ```
 
 ```{r}
-SIZEFACTOR = 0.01 # Desired Magnitude of Direction Arrows
-pos <- mutate(pos, lat_dir = (dropoff_latitude - pickup_latitude), long_dir = (dropoff_longitude - pickup_longitude))
+SIZEFACTOR = 0.015 # Desired Magnitude of Direction Arrows
 
-pos <- mutate(pos, lat_dir_scaled = lat_dir * SIZEFACTOR/sqrt(lat_dir^2 + long_dir^2), long_dir_scaled = long_dir * SIZEFACTOR /sqrt(lat_dir^2 + long_dir^2))
-# NaN results for those rides where pickup and dropoff locations are equal.
+pos <- mutate(pos, lat_dir = (dropoff_latitude - pickup_latitude), long_dir = (dropoff_longitude - pickup_longitude)) # adds rows 'lat_dir' and 'long_dir' to the data frame 'pos' which respectively contain the change in latitude and longitude for each ride.
+
+pos <- mutate(pos, lat_dir_scaled = lat_dir * SIZEFACTOR/sqrt(lat_dir^2 + long_dir^2), long_dir_scaled = long_dir * SIZEFACTOR /sqrt(lat_dir^2 + long_dir^2)) # creates columns 'lat_dir_scaled' and 'long_dir_scaled', which contain the coordinates of 'lat_dir' and 'long_dir' normalized so that the direction vector has magnitude equal to 'SIZEFACTOR'
+
+# Note: NaN results for rides where pickup and dropoff locations are equal.
 ```
 
 ```{r}
-grouped <- group_by(pos, lat_region, long_region) %>% summarize(lat_dir_avg = mean(lat_dir_scaled, na.rm = TRUE), long_dir_avg = mean(long_dir_scaled, na.rm =TRUE), count = n())
+grouped <- group_by(pos, lat_region, long_region) %>% summarize(lat_dir_avg = mean(lat_dir_scaled, na.rm = TRUE), long_dir_avg = mean(long_dir_scaled, na.rm =TRUE), count = n()) # groups data in 'pos' by 'lat_region' and 'long_region' (i.e. by region on the grid) Calculates number of rides being picked up in each region ('count') and the average direction traveled for each taxi rides beginning in each grid (long_dir_avg, lat_dir_avg)
 
 grouped$lat_min = rep(NA, nrow(grouped))
 grouped$lat_max = rep(NA, nrow(grouped))
@@ -418,17 +337,23 @@ for(i in 1:nrow(grouped)) {
   grouped$lat_max[i] <- lat_bound[grouped$lat_region[i] + 1]
   grouped$long_min[i] <- long_bound[grouped$long_region[i]]
   grouped$long_max[i] <- long_bound[grouped$long_region[i] + 1]
-}
+} # adds rows to grouped containing upper region boundaries (long_max, lat_max) and lower region boundaries (long_min, lat_min) for each region 
 
-grouped <- mutate(grouped, avg_lat = (lat_max + lat_min)/2, avg_long = (long_max + long_min)/2)
+grouped <- mutate(grouped, avg_lat = (lat_max + lat_min)/2, avg_long = (long_max + long_min)/2) # adds rows to 'grouped' containing center point (ave_long, ave_lat) of each region.
 ```
 
 
 ```{r}
-ggplot(data = grouped, aes(xmin = long_min, xmax = long_max, ymin = lat_min, ymax = lat_max, fill = count)) + geom_rect() + scale_fill_gradient("Number of Rides", low = "red", high = "white")
+ggplot(data = grouped, aes(xmin = long_min, xmax = long_max, ymin = lat_min, ymax = lat_max, fill = count)) + geom_rect() + scale_fill_gradientn("Number of Pickups",colors = c("purple","blue","green","Yellow", "orange", "red")) # plots regions with color codes based on number of taxi pickups
 ```
 
 
 ```{r}
-ggmap(map) + geom_segment(aes(x = avg_long, xend = (avg_long + long_dir_avg), y = avg_lat, yend = (avg_lat + lat_dir_avg), fill = "black"), data = grouped, arrow = arrow(length=unit(0.15,"cm"), ends="first", type = "closed")) + labs(title = "Direction of Motion by Region", x = expression(italic("Longitude")~"(degrees)"),y = expression(italic("Latitude")~"(degrees)"))
+ggmap(map) + # loads map
+  geom_segment(aes(x = avg_long, xend = (avg_long + long_dir_avg), y = avg_lat, yend = (avg_lat + lat_dir_avg), color = count), data = grouped, arrow = arrow(length=unit(0.15,"cm"), ends="first", type = "closed")) + # adds direction vectors
+  labs(title = "Direction of Motion by Region", x = expression(italic("Longitude")~"(degrees)"),y = expression(italic("Latitude")~"(degrees)")) + # sets title and axes labels
+  scale_color_gradientn("Number of Rides",colors = c("purple","blue","green","Yellow", "orange", "red")) # sets color scale
 ```
+Plot 3: This plot shows the average direction of travel for taxis with pickup locations in different regions of NYC. To calculate the average direction of travel, the normalized direction vector for each trip was calculated. The regional average direction of travel was then calculated. The resulting vectors are displayed on a map of Manhattan. The base of each vector denotes the center point of the region it represents. The magnitude of vectors represents the level of agreement in direction of travel. The longer the vector, the more uniform the direction of travel.The vectors are colored based on the number of pickups in their respective regions. Vectors in purple are likely insignificant for detecting trends, as they are often based on only one (or a few) taxi rides.
+
+As can be be seen there seems to be a general flow of traffic out of Manhattan, as most of the arrows seem to be pointing outwards. Further analysis options include faceting the plot based on time to determine whether the direction of travel varies with time of day.
