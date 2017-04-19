@@ -1,0 +1,39 @@
+---
+title: "Taxi Outline"
+author: "Christoph, Chris, Carol"
+date: "4/19/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### 2015 Yellow Taxi Trip Data - NYC Open Data
+https://data.cityofnewyork.us/Transportation/2015-Yellow-Taxi-Trip-Data/ba8s-jw6u
+
+### Research Questions
+We are particularly interested in exploring 3 features of this taxi trips 
+dataset: time (`dropoff_datetime` and `pickup_datetime`), location 
+(`dropoff_latitude`, `dropoff_longitude`, `pickup_latitude`, and
+`pickup_longitude`), and payments, specifically tips (`tip_amount`). 
+
+## What factors predict how much (as a percentage of their total fare) a person tips?
+    * Do they tip more if there are more people in the car (perhaps due to 
+    social pressure)? 
+    * Do they tip more if they get to where they are going more quickly?
+    * All-subsets regression, as well as explore interaction effects.
+
+## How do trips change with location and time of day?
+    * What are the most popular pickup and drop off locations in New York? 
+    * How does this change by time of day?
+    * Are the most popular pickup locations also the most popular dropoff 
+    locations?
+      * For example, do people take more taxis to JFK than from JFK (based on 
+      rate_code variable == 1) 
+    * Barchart of number of pickups every hour at the 5 most popular locations.
+    * What is the average speed of taxis depending on the time of day and region 
+      of the city? 
+    * Which directions are taxis traveling on average at different times of the 
+    day? (net movement into the city in the morning and net movement out in the 
+    evenings?)
