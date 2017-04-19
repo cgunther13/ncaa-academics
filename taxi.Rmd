@@ -139,6 +139,7 @@ taxi <- read.csv("taxi_data.csv", as.is = TRUE)
 library(dplyr)
 library(ggplot2)
 library(leaps)
+library(lubridate)
 library(ggmap)
 library(mapproj)
 ```
@@ -162,6 +163,19 @@ taxi$dropoff_hour <- substr(taxi$dropoff_datetime, 12, 13)
 taxi$dropoff_hour <- as.numeric(taxi$dropoff_hour)
 ```
 
+Create `avg_speed`
+
+```{r}
+taxi$pickup_datetime <- ymd_hms(taxi$pickup_datetime)
+taxi$dropoff_datetime <- ymd_hms(taxi$dropoff_datetime)
+taxi$trip_duration <- (taxi$dropoff_datetime - taxi$pickup_datetime) / 3600
+taxi$trip_duration <- as.numeric(taxi$trip_duration)
+
+
+taxi$avg_speed <- taxi$trip_distance / taxi$trip_duration
+```
+
+
 Remove `trip_distance` = 0
 ```{r}
 taxi <- taxi[!(taxi$trip_distance == 0),]
@@ -172,6 +186,8 @@ Remove `passenger_count` = 0 and create factor variable for passenger count
 taxi <- taxi[taxi$passenger_count > 0,]
 factor_passengers <- as.factor(taxi$passenger_count)
 ```
+
+### What factors predict how much (as a percentage of their total fare) a person tips?
 
 ## Plot of `pct_tip` by `passenger_count`
 
@@ -188,6 +204,13 @@ is considered a standard tip. We need to further explore whether tip percentage
 is affected by location or distance, which we do in the regression below. 
 Furthermore, we will explore where larger groups tend to travel. For example, we 
 predict that larger groups may travel to more touristy areas. 
+
+## Plot of `pct_tip` by `avg_speed`
+
+```{r}
+taxi$avg_speed <- taxi$trip_distance / time
+```
+
 
 ## All-Subsets Regression to Predict `tip_pct`
 
@@ -251,6 +274,18 @@ already responsible for the toll, so they are actually paying even more. This
 seems counterintuitive, but could be due to the passenger wanting to repay the
 driver for going through the log jam at a toll booth. 
 
+
+### How does the number of passengers influence the ride?
+
+## Tip
+
+## Distance
+
+## Pickup/Dropoff Locations
+
+
+
+### What are the most popular pickup and drop off locations in New York? 
 
 ## Location Plots
 
