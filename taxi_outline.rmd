@@ -23,6 +23,7 @@ dataset: time (`dropoff_datetime` and `pickup_datetime`), location
     social pressure)? 
     * Do they tip more if they get to where they are going more quickly?
     * All-subsets regression, as well as explore interaction effects.
+    * Do tips change by location (ie: more tips in the financial)
 
 ## How do trips change with location and time of day?
     * What are the most popular pickup and drop off locations in New York? 
@@ -36,4 +37,4 @@ dataset: time (`dropoff_datetime` and `pickup_datetime`), location
       of the city? 
     * Which directions are taxis traveling on average at different times of the 
     day? (net movement into the city in the morning and net movement out in the 
-    evenings?)
+    evenings)
