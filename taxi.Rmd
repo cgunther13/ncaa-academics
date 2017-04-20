@@ -87,10 +87,6 @@ dataset: time (`dropoff_datetime` and `pickup_datetime`), location
 
   * What factors predict how much (as a percentage of their total fare) a person 
     tips?
-    * Do they tip more during the holidays? Do they tip more if there are more 
-    people in the car (perhaps due to social pressure)? 
-    * We will do an all-subsets regression, as well as explore interaction 
-    effects.
   * How does the number of passengers influence the ride?
     * For example, tip, distance, pickup/dropoff locations?
   * What are the most popular pickup and drop off locations in New York? 
@@ -349,11 +345,78 @@ ggplot(data = grouped, aes(xmin = long_min, xmax = long_max, ymin = lat_min, yma
 
 
 ```{r}
+
+MINRIDES <-  30 # minimum number of rides for arrow to show up
 ggmap(map) + # loads map
-  geom_segment(aes(x = avg_long, xend = (avg_long + long_dir_avg), y = avg_lat, yend = (avg_lat + lat_dir_avg), color = count), data = grouped, arrow = arrow(length=unit(0.15,"cm"), ends="first", type = "closed")) + # adds direction vectors
+  geom_segment(aes(x = avg_long, xend = (avg_long + long_dir_avg), y = avg_lat, yend = (avg_lat + lat_dir_avg), color = count), data = filter(grouped, count > MINRIDES), arrow = arrow(length=unit(0.15,"cm"), ends="first", type = "closed")) + # adds direction vectors
   labs(title = "Direction of Motion by Region", x = expression(italic("Longitude")~"(degrees)"),y = expression(italic("Latitude")~"(degrees)")) + # sets title and axes labels
-  scale_color_gradientn("Number of Rides",colors = c("purple","blue","green","Yellow", "orange", "red")) # sets color scale
+  scale_color_gradientn("Number of Rides",colors = c("purple","blue","green","yellow","orange","red")) # sets color scale
 ```
+
+
 Plot 3: This plot shows the average direction of travel for taxis with pickup locations in different regions of NYC. To calculate the average direction of travel, the normalized direction vector for each trip was calculated. The regional average direction of travel was then calculated. The resulting vectors are displayed on a map of Manhattan. The base of each vector denotes the center point of the region it represents. The magnitude of vectors represents the level of agreement in direction of travel. The longer the vector, the more uniform the direction of travel.The vectors are colored based on the number of pickups in their respective regions. Vectors in purple are likely insignificant for detecting trends, as they are often based on only one (or a few) taxi rides.
 
 As can be be seen there seems to be a general flow of traffic out of Manhattan, as most of the arrows seem to be pointing outwards. Further analysis options include faceting the plot based on time to determine whether the direction of travel varies with time of day.
+
+
+## Generic Plot function:
+
+```{r}
+# Gives Heat Plot of Manhattan showing average of desired variable for each region. 
+#data ... data frame from which data is drawn
+#varialbe ... vector of the variable under consideration
+#lat_type ... either "pickup" or "dropoff", depending on desired location by which to group data
+#GRID_RESOLUTION ... integer representing number of subdivisions of longitude and latitude
+#title ... string containing plot title
+#varname ... string containing variable name
+#MINLAT, MAXLAT, MINLONG, MAXLONG ... specify area covered by plot
+
+locationPlot <- function(data, variable, lat_type = "pickup", GRID_RESOLUTION = 100, title = "Add Title", varname = "Variable", MINLAT = 40.675, MAXLAT = 40.85, MINLONG = -74.1, MAXLONG = -73.85) {
+  
+  data$variable <- variable
+    
+  if(lat_type == "pickup") {
+      pos <- filter(data, pickup_longitude < MAXLONG, pickup_longitude > MINLONG, pickup_latitude < MAXLAT, pickup_latitude > MINLAT) # selects all taxi rides whose pickup was within the specified region. Stores these rides to a new data frame 'pos'
+      pos <- filter(pos, dropoff_longitude != 0, dropoff_latitude!= 0) # removes all rows with dropoff longitude or latitude equal to zero.
+      pos <- filter(pos, dropoff_longitude != pickup_longitude, dropoff_latitude != pickup_latitude) # removes all rows where pickup and dropoff locations are the same.
+      pos$lat_region <- cut(pos$pickup_latitude,GRID_RESOLUTION) # cuts latitude into bins
+      pos$long_region <- cut(pos$pickup_longitude,GRID_RESOLUTION) # cuts latitude into bins
+    } 
+  if (lat_type == "dropoff"){
+        pos <- filter(data, dropoff_longitude < MAXLONG, dropoff_longitude > MINLONG, dropoff_latitude < MAXLAT, dropoff_latitude > MINLAT) # selects all taxi rides whose pickup was within the specified region. Stores these rides to a new data frame 'pos'
+      pos <- filter(pos, dropoff_longitude != 0, dropoff_latitude!= 0) # removes all rows with dropoff longitude or latitude equal to zero.
+      pos <- filter(pos, dropoff_longitude != pickup_longitude, dropoff_latitude != pickup_latitude) # removes all rows where pickup and dropoff locations are the same.
+      pos$lat_region <- cut(pos$dropoff_latitude,GRID_RESOLUTION) # cuts latitude into bins
+      pos$long_region <- cut(pos$dropoff_longitude,GRID_RESOLUTION)
+    }
+    
+    grouped <- group_by(pos, lat_region, long_region) %>% summarize(count = n(), var = mean(variable)) # groups data in 'pos' by 'lat_region' and 'long_region' (i.e. by region on the grid) Calculates number of rides being picked up in each region ('count') and the average direction traveled for each taxi rides beginning in each grid (long_dir_avg, lat_dir_avg)
+    head(grouped)
+    temp <-  grouped$lat_region
+    temp <- gsub("\\(", "", temp)
+    temp <- gsub("\\]", "", temp)
+    temp <- strsplit(temp, ",")
+    temp <- unlist(temp)
+    temp <- as.numeric(temp)
+    grouped$max_lat <- temp[2*1:nrow(grouped)] # list of latitude upper bounds
+    grouped$min_lat <- temp[2*1:nrow(grouped)-1] # listof latitude lower bounds
+    grouped$avg_lat <- 0.5*(grouped$max_lat + grouped$min_lat)
+    
+    temp <-  grouped$long_region
+    temp <- gsub("\\(", "", temp)
+    temp <- gsub("\\]", "", temp)
+    temp <- strsplit(temp, ",")
+    temp <- unlist(temp)
+    temp <- as.numeric(temp)
+    grouped$max_long <- temp[2*1:nrow(grouped)] # list of latitude upper bounds
+    grouped$min_long <- temp[2*1:nrow(grouped)-1] # listof latitude lower bounds
+    grouped$avg_long <- 0.5*(grouped$max_long + grouped$min_long)
+    map <- get_map(location = c(MINLONG,MINLAT, MAXLONG, MAXLAT), source = "stamen", maptype = "watercolor") # loads google map of desired region
+    ggmap(map)+ geom_rect(aes(x = min_long, y = max_long, xmin = min_long, xmax = max_long, ymin = min_lat, ymax = max_lat, fill = var), data = grouped) + scale_fill_gradientn(varname ,colors = c("purple","blue","green","yellow","orange","red")) + labs(title = title, x = expression(italic("Longitude")~"(degrees)"),y = expression(italic("Latitude")~"(degrees)"))
+}
+```
+```{r}
+locationPlot(taxi, variable = taxi$trip_distance, lat_type = "pickup", GRID_RESOLUTION = 100, title = "Average Trip Distance By Region", varname = "Distance (unit)")
+```
+
+
