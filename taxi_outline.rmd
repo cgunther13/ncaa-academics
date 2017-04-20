@@ -91,7 +91,7 @@ ggplot(speeds[1:5,], aes(x = mavg_speed, y = mtip_pct)) +
     "Average Speed (mph)", y = "Percentage Tipped")
 ```
 
-* All-subsets regression, as well as explore interaction effects.
+* All-subsets regression
 
 ```{r, echo = FALSE}
 r1 = regsubsets(tip_pct ~ pickup_hour + pickup_latitude + pickup_longitude +  
@@ -120,32 +120,61 @@ mbest <- lm(tip_pct ~ pickup_hour + tolls_amount + extra + avg_speed,
 summary(mbest)
 ```
 
+* Explore interaction effects:
 
-* Do tips change by location (ie: more tips in the financial district)
+
+* Do tips change by region of NYC (ie: more tips in the financial district)?
 
 
-* What affects whether or not people tip more than 25%? (logistic regression)?
+* What affects whether or not people tip more than 25%? (stepwise logistic 
+regression)
 
-```{r}
+```{r, echo = FALSE}
 taxi$tip25 <- factor(ifelse(taxi$tip_pct >= 25, "Yes", "No"))
-m25all <- glm(tip25 ~ avg_speed, data = taxi)
+m25all <- glm(tip25 ~ pickup_hour + pickup_latitude + pickup_longitude +  
+                dropoff_hour + dropoff_latitude + dropoff_longitude + 
+                passenger_count + tolls_amount + extra + vendor_id + 
+                avg_speed, data = taxi, family = binomial)
+m25step <- step(m25all, direction = "backward")
 ```
 
+```{r}
+m25best <- glm(tip25 ~ pickup_latitude + tolls_amount + extra + avg_speed, 
+               data = taxi, family = binomial)
+summary(m25best)
+```
 
-* What affects whether or not people tip less than 15%? (logistic regression)?
+* What affects whether or not people tip less than 15%? (stepwise logistic 
+regression)
+
+```{r, echo = FALSE}
+taxi$tip15 <- factor(ifelse(taxi$tip_pct <= 15, "Yes", "No"))
+m15all <- glm(tip25 ~ pickup_hour + pickup_latitude + pickup_longitude +  
+                dropoff_hour + dropoff_latitude + dropoff_longitude + 
+                passenger_count + tolls_amount + extra + vendor_id + 
+                avg_speed, data = taxi, family = binomial)
+m15step <- step(m15all, direction = "backward")
+```
+
+```{r}
+m15best <- glm(tip15 ~ pickup_latitude + tolls_amount + extra + avg_speed, 
+               data = taxi, family = binomial)
+summary(m15best)
+```
+
+* Do people tip the same percentage for tolls and extra charges as they do for 
+their overall fare?
 
 
 
 ## How do trips change with location and time of day?
-    * What are the most popular pickup and drop off locations in New York? 
-    * How does this change by time of day?
-    * Are the most popular pickup locations also the most popular dropoff 
-    locations?
-      * For example, do people take more taxis to JFK than from JFK (based on 
-      rate_code variable == 1) 
-    * Barchart of number of pickups every hour at the 5 most popular locations.
-    * What is the average speed of taxis depending on the time of day and region 
-      of the city? 
-    * Which directions are taxis traveling on average at different times of the 
-    day? (net movement into the city in the morning and net movement out in the 
-    evenings)
+* What are the most popular pickup and drop off locations in New York? 
+* How does this change by time of day?
+* Are the most popular pickup locations also the most popular dropoff locations?
+  * For example, do people take more taxis to JFK than from JFK (based on 
+  rate_code variable == 1) 
+* Barchart of number of pickups every hour at the 5 most popular locations.
+* What is the average speed of taxis depending on the time of day and region of 
+the city? 
+* Which directions are taxis traveling on average at different times of the day? 
+(net movement into the city in the morning and net movement out in the evenings)
