@@ -12,17 +12,49 @@ knitr::opts_chunk$set(echo = TRUE)
 ### 2015 Yellow Taxi Trip Data - NYC Open Data
 https://data.cityofnewyork.us/Transportation/2015-Yellow-Taxi-Trip-Data/ba8s-jw6u
 
-```{r}
+```{r, echo = FALSE}
 taxi <- read.csv("taxi_data.csv", as.is = TRUE)
 ```
 
-```{r}
+```{r, echo = FALSE}
 library(dplyr)
 library(ggplot2)
+library(MASS)
 library(leaps)
 library(lubridate)
 library(ggmap)
 library(mapproj)
+```
+
+```{r, echo = FALSE}
+taxi <- taxi %>% mutate(tip_pct = (tip_amount / fare_amount) * 100)
+taxi <- taxi[-c(which(taxi$tip_pct == "NaN"), which(taxi$tip_pct == "Inf")),]
+taxi <- taxi[taxi$tip_pct <= 100,]
+
+taxi$pickup_hour <- substr(taxi$pickup_datetime, 12, 13)
+taxi$pickup_hour <- as.numeric(taxi$pickup_hour)
+taxi$dropoff_hour <- substr(taxi$dropoff_datetime, 12, 13)
+taxi$dropoff_hour <- as.numeric(taxi$dropoff_hour)
+
+MAXLAT <- 40.85
+MINLAT <- 40.675
+MAXLONG <- -73.85
+MINLONG <- -74.1
+taxi <- filter(taxi, pickup_longitude < MAXLONG, pickup_longitude > MINLONG, 
+               pickup_latitude < MAXLAT, pickup_latitude > MINLAT)
+
+taxi <- taxi[!(taxi$trip_distance == 0),]
+
+taxi$pickup_datetime <- ymd_hms(taxi$pickup_datetime)
+taxi$dropoff_datetime <- ymd_hms(taxi$dropoff_datetime)
+taxi$trip_duration <- (taxi$dropoff_datetime - taxi$pickup_datetime) / 3600
+taxi$trip_duration <- as.numeric(taxi$trip_duration)
+taxi$trip_duration[taxi$trip_duration == 0] <- NA
+
+taxi$avg_speed <- taxi$trip_distance / taxi$trip_duration
+taxi$avg_speed[taxi$avg_speed > 100] <- NA
+
+taxi <- taxi[taxi$passenger_count > 0,]
 ```
 
 ### Research Questions
@@ -33,16 +65,9 @@ dataset: time (`dropoff_datetime` and `pickup_datetime`), location
 
 ## What factors predict how much (as a percentage of their total fare) a person tips?
 
-```{r}
-taxi <- taxi %>% mutate(tip_pct = (tip_amount / fare_amount) * 100)
-taxi <- taxi[-c(which(taxi$tip_pct == "NaN"), which(taxi$tip_pct == "Inf")),]
-taxi <- taxi[taxi$tip_pct <= 100,]
-```
-
 * Do people tip more if there are more passengers in the car (social pressure)? 
 
 ```{r}
-taxi <- taxi[taxi$passenger_count > 0,]
 ggplot(taxi, aes(x = as.factor(passenger_count), y = tip_pct)) + 
   geom_boxplot() +
   labs(title = "Percentage Tipped by Number of Passengers", x = 
@@ -51,28 +76,65 @@ ggplot(taxi, aes(x = as.factor(passenger_count), y = tip_pct)) +
 
 * Do people tip more if they get to where they are going more quickly?
 
-```{r}
-taxi$pickup_datetime <- ymd_hms(taxi$pickup_datetime)
-taxi$dropoff_datetime <- ymd_hms(taxi$dropoff_datetime)
-taxi$trip_duration <- as.numeric((taxi$dropoff_datetime - taxi$pickup_datetime) / 3600)
-taxi$trip_duration[taxi$trip_duration == 0] <- NA
-taxi$avg_speed <- taxi$trip_distance / taxi$trip_duration
-taxi$avg_speed[taxi$avg_speed > 60] <- NA
+```{r, echo = FALSE}
+speeds <- taxi %>% mutate(avg_speedCat = cut(avg_speed, c(0, 10, 20, 30, 40, 50))) %>%
+  group_by(avg_speedCat) %>%
+  summarize(mavg_speed = mean(avg_speed), mtip_pct = mean(tip_pct))
+mspeedCat <- lm(mtip_pct ~ mavg_speed, data = speeds)
 ```
 
 ```{r}
-
-```
-
-```{r}
-ggplot(taxi, aes(x = avg_speed, y = tip_pct)) + 
+ggplot(speeds[1:5,], aes(x = mavg_speed, y = mtip_pct)) + 
   geom_point() +
+  geom_smooth(method = lm) + 
   labs(title = "Percentage Tipped by Average Speed", x = 
     "Average Speed (mph)", y = "Percentage Tipped")
 ```
 
-    * All-subsets regression, as well as explore interaction effects.
-    * Do tips change by location (ie: more tips in the financial)
+* All-subsets regression, as well as explore interaction effects.
+
+```{r, echo = FALSE}
+r1 = regsubsets(tip_pct ~ pickup_hour + pickup_latitude + pickup_longitude +  
+                  dropoff_hour + dropoff_latitude + dropoff_longitude + 
+                  passenger_count + tolls_amount + extra + vendor_id + 
+                  avg_speed, data = taxi, nvmax = 10)
+r1s <- summary(r1)
+r1s$which
+plot(r1s$rsq, main = "R-squareds of Models with Increasingly More Variables", 
+     ylab = "R-sqaured")
+
+plot(r1s$cp, main = "Mallows' Cp of Models with Increasingly More Variables", 
+     ylab = "Cp")
+
+which.min(r1s$cp)
+bestwhich <- r1s$which[which.min(r1s$cp),]
+best_vars <- names(bestwhich[bestwhich == TRUE])
+best_vars <- best_vars[-1]
+best_vars
+```
+
+```{r}
+plot(r1, scale="Cp", main = "Most Important Predictors in Different Size Models")
+mbest <- lm(tip_pct ~ pickup_hour + tolls_amount + extra + avg_speed, 
+            data = taxi)
+summary(mbest)
+```
+
+
+* Do tips change by location (ie: more tips in the financial district)
+
+
+* What affects whether or not people tip more than 25%? (logistic regression)?
+
+```{r}
+taxi$tip25 <- factor(ifelse(taxi$tip_pct >= 25, "Yes", "No"))
+m25all <- glm(tip25 ~ avg_speed, data = taxi)
+```
+
+
+* What affects whether or not people tip less than 15%? (logistic regression)?
+
+
 
 ## How do trips change with location and time of day?
     * What are the most popular pickup and drop off locations in New York? 
