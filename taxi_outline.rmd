@@ -12,6 +12,19 @@ knitr::opts_chunk$set(echo = TRUE)
 ### 2015 Yellow Taxi Trip Data - NYC Open Data
 https://data.cityofnewyork.us/Transportation/2015-Yellow-Taxi-Trip-Data/ba8s-jw6u
 
+```{r}
+taxi <- read.csv("taxi_data.csv", as.is = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(leaps)
+library(lubridate)
+library(ggmap)
+library(mapproj)
+```
+
 ### Research Questions
 We are particularly interested in exploring 3 features of this taxi trips 
 dataset: time (`dropoff_datetime` and `pickup_datetime`), location 
@@ -19,9 +32,45 @@ dataset: time (`dropoff_datetime` and `pickup_datetime`), location
 `pickup_longitude`), and payments, specifically tips (`tip_amount`). 
 
 ## What factors predict how much (as a percentage of their total fare) a person tips?
-    * Do they tip more if there are more people in the car (perhaps due to 
-    social pressure)? 
-    * Do they tip more if they get to where they are going more quickly?
+
+```{r}
+taxi <- taxi %>% mutate(tip_pct = (tip_amount / fare_amount) * 100)
+taxi <- taxi[-c(which(taxi$tip_pct == "NaN"), which(taxi$tip_pct == "Inf")),]
+taxi <- taxi[taxi$tip_pct <= 100,]
+```
+
+* Do people tip more if there are more passengers in the car (social pressure)? 
+
+```{r}
+taxi <- taxi[taxi$passenger_count > 0,]
+ggplot(taxi, aes(x = as.factor(passenger_count), y = tip_pct)) + 
+  geom_boxplot() +
+  labs(title = "Percentage Tipped by Number of Passengers", x = 
+    "Number of Passengers", y = "Percentage Tipped")
+```
+
+* Do people tip more if they get to where they are going more quickly?
+
+```{r}
+taxi$pickup_datetime <- ymd_hms(taxi$pickup_datetime)
+taxi$dropoff_datetime <- ymd_hms(taxi$dropoff_datetime)
+taxi$trip_duration <- as.numeric((taxi$dropoff_datetime - taxi$pickup_datetime) / 3600)
+taxi$trip_duration[taxi$trip_duration == 0] <- NA
+taxi$avg_speed <- taxi$trip_distance / taxi$trip_duration
+taxi$avg_speed[taxi$avg_speed > 60] <- NA
+```
+
+```{r}
+
+```
+
+```{r}
+ggplot(taxi, aes(x = avg_speed, y = tip_pct)) + 
+  geom_point() +
+  labs(title = "Percentage Tipped by Average Speed", x = 
+    "Average Speed (mph)", y = "Percentage Tipped")
+```
+
     * All-subsets regression, as well as explore interaction effects.
     * Do tips change by location (ie: more tips in the financial)
 

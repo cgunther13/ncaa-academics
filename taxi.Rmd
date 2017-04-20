@@ -174,6 +174,11 @@ taxi <- filter(taxi, pickup_longitude < MAXLONG, pickup_longitude > MINLONG,
                pickup_latitude < MAXLAT, pickup_latitude > MINLAT)
 ```
 
+Remove `trip_distance` = 0
+```{r}
+taxi <- taxi[!(taxi$trip_distance == 0),]
+```
+
 Create `trip_duration`
 
 ```{r}
@@ -189,11 +194,6 @@ Create `avg_speed`
 ```{r}
 taxi$avg_speed <- taxi$trip_distance / taxi$trip_duration
 taxi$avg_speed[taxi$avg_speed > 100] <- NA
-```
-
-Remove `trip_distance` = 0
-```{r}
-taxi <- taxi[!(taxi$trip_distance == 0),]
 ```
 
 Remove `passenger_count` = 0 and create factor variable for passenger count
@@ -228,6 +228,26 @@ ggplot(taxi, aes(x = avg_speed, y = tip_pct)) +
   labs(title = "Percentage Tipped by Average Speed", x = 
     "Average Speed (mph)", y = "Percentage Tipped")
 ```
+
+```{r}
+speeds <- taxi %>% mutate(avg_speedCat = cut(avg_speed, c(0, 10, 20, 30, 40, 50))) %>%
+  group_by(avg_speedCat) %>%
+  summarize(mavg_speed = mean(avg_speed), mtip_pct = mean(tip_pct))
+mspeedCat <- lm(mtip_pct ~ mavg_speed, data = speeds)
+plot(mtip_pct ~ mavg_speed, data = speeds)
+abline(a = coef(mspeedCat)[1], b = coef(mspeedCat)[2])
+```
+
+```{r}
+taxi <- taxi %>% mutate(avg_speedCat = cut(avg_speed, c(0, 10, 20, 30, 40, 50)))
+plot(mtip_pct ~ mavg_speed, data = speeds)
+ggplot(subset(taxi, taxi$avg_speedCat == "(30,40]"), 
+  aes(x = avg_speed, y = tip_pct)) + 
+  geom_point() +
+  labs(title = "Percentage Tipped by Average Speed", x = 
+    "Average Speed (mph)", y = "Percentage Tipped")
+```
+
 
 ## Plot of `trip_distance` by `avg_speed`
 
