@@ -87,6 +87,10 @@ dataset: time (`dropoff_datetime` and `pickup_datetime`), location
 
   * What factors predict how much (as a percentage of their total fare) a person 
     tips?
+    * Do they tip more during the holidays? Do they tip more if there are more 
+    people in the car (perhaps due to social pressure)? 
+    * We will do an all-subsets regression, as well as explore interaction 
+    effects.
   * How does the number of passengers influence the ride?
     * For example, tip, distance, pickup/dropoff locations?
   * What are the most popular pickup and drop off locations in New York? 
@@ -135,6 +139,7 @@ taxi <- read.csv("taxi_data.csv", as.is = TRUE)
 library(dplyr)
 library(ggplot2)
 library(leaps)
+library(lubridate)
 library(ggmap)
 library(mapproj)
 ```
@@ -158,6 +163,34 @@ taxi$dropoff_hour <- substr(taxi$dropoff_datetime, 12, 13)
 taxi$dropoff_hour <- as.numeric(taxi$dropoff_hour)
 ```
 
+Only consider latitudes and longitudes actually in NYC
+
+```{r}
+MAXLAT <- 40.85
+MINLAT <- 40.675
+MAXLONG <- -73.85
+MINLONG <- -74.1
+taxi <- filter(taxi, pickup_longitude < MAXLONG, pickup_longitude > MINLONG, 
+               pickup_latitude < MAXLAT, pickup_latitude > MINLAT)
+```
+
+Create `trip_duration`
+
+```{r}
+taxi$pickup_datetime <- ymd_hms(taxi$pickup_datetime)
+taxi$dropoff_datetime <- ymd_hms(taxi$dropoff_datetime)
+taxi$trip_duration <- (taxi$dropoff_datetime - taxi$pickup_datetime) / 3600
+taxi$trip_duration <- as.numeric(taxi$trip_duration)
+taxi$trip_duration[taxi$trip_duration == 0] <- NA
+```
+
+Create `avg_speed`
+
+```{r}
+taxi$avg_speed <- taxi$trip_distance / taxi$trip_duration
+taxi$avg_speed[taxi$avg_speed > 100] <- NA
+```
+
 Remove `trip_distance` = 0
 ```{r}
 taxi <- taxi[!(taxi$trip_distance == 0),]
@@ -168,6 +201,8 @@ Remove `passenger_count` = 0 and create factor variable for passenger count
 taxi <- taxi[taxi$passenger_count > 0,]
 factor_passengers <- as.factor(taxi$passenger_count)
 ```
+
+### What factors predict how much (as a percentage of their total fare) a person tips?
 
 ## Plot of `pct_tip` by `passenger_count`
 
@@ -184,6 +219,24 @@ is considered a standard tip. We need to further explore whether tip percentage
 is affected by location or distance, which we do in the regression below. 
 Furthermore, we will explore where larger groups tend to travel. For example, we 
 predict that larger groups may travel to more touristy areas. 
+
+## Plot of `pct_tip` by `avg_speed`
+
+```{r}
+ggplot(taxi, aes(x = avg_speed, y = tip_pct)) + 
+  geom_point() +
+  labs(title = "Percentage Tipped by Average Speed", x = 
+    "Average Speed (mph)", y = "Percentage Tipped")
+```
+
+## Plot of `trip_distance` by `avg_speed`
+
+```{r}
+ggplot(taxi, aes(x = avg_speed, y = trip_distance)) + 
+  geom_point() +
+  labs(title = "Trip Distance by Average Speed", x = 
+    "Average Speed (mph)", y = "Percentage Tipped")
+```
 
 ## All-Subsets Regression to Predict `tip_pct`
 
@@ -247,6 +300,18 @@ already responsible for the toll, so they are actually paying even more. This
 seems counterintuitive, but could be due to the passenger wanting to repay the
 driver for going through the log jam at a toll booth. 
 
+
+### How does the number of passengers influence the ride?
+
+## Tip
+
+## Distance
+
+## Pickup/Dropoff Locations
+
+
+
+### What are the most popular pickup and drop off locations in New York? 
 
 ## Location Plots
 
@@ -415,8 +480,7 @@ locationPlot <- function(data, variable, lat_type = "pickup", GRID_RESOLUTION = 
     ggmap(map)+ geom_rect(aes(x = min_long, y = max_long, xmin = min_long, xmax = max_long, ymin = min_lat, ymax = max_lat, fill = var), data = grouped) + scale_fill_gradientn(varname ,colors = c("purple","blue","green","yellow","orange","red")) + labs(title = title, x = expression(italic("Longitude")~"(degrees)"),y = expression(italic("Latitude")~"(degrees)"))
 }
 ```
+
 ```{r}
 locationPlot(taxi, variable = taxi$trip_distance, lat_type = "pickup", GRID_RESOLUTION = 100, title = "Average Trip Distance By Region", varname = "Distance (unit)")
 ```
-
-
