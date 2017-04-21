@@ -137,6 +137,8 @@ library(ggplot2)
 library(leaps)
 library(ggmap)
 library(mapproj)
+library(gridExtra)
+library(grid)
 ```
 
 ## Cleaning
@@ -364,7 +366,7 @@ As can be be seen there seems to be a general flow of traffic out of Manhattan, 
 ```{r}
 # Gives Heat Plot of Manhattan showing average of desired variable for each region. 
 #data ... data frame from which data is drawn
-#varialbe ... vector of the variable under consideration
+#variable ... vector of the variable under consideration
 #lat_type ... either "pickup" or "dropoff", depending on desired location by which to group data
 #GRID_RESOLUTION ... integer representing number of subdivisions of longitude and latitude
 #title ... string containing plot title
@@ -415,8 +417,123 @@ locationPlot <- function(data, variable, lat_type = "pickup", GRID_RESOLUTION = 
     ggmap(map)+ geom_rect(aes(x = min_long, y = max_long, xmin = min_long, xmax = max_long, ymin = min_lat, ymax = max_lat, fill = var), data = grouped) + scale_fill_gradientn(varname ,colors = c("purple","blue","green","yellow","orange","red")) + labs(title = title, x = expression(italic("Longitude")~"(degrees)"),y = expression(italic("Latitude")~"(degrees)"))
 }
 ```
+
 ```{r}
 locationPlot(taxi, variable = taxi$trip_distance, lat_type = "pickup", GRID_RESOLUTION = 100, title = "Average Trip Distance By Region", varname = "Distance (unit)")
+```
+
+## Time Plot
+```{r}
+data <- taxi 
+GRID_RESOLUTION <- 40
+title <-  "Add Title"
+varname <-  "Variable"
+MAXLAT <- 40.85
+MINLAT <- 40.675
+MAXLONG <- -73.9
+MINLONG <- -74.1
+N_LOCATIONS <- 5
+
+      pos <- filter(data, pickup_longitude < MAXLONG, pickup_longitude > MINLONG, pickup_latitude < MAXLAT, pickup_latitude > MINLAT) # selects all taxi rides whose pickup was within the specified region. Stores these rides to a new data frame 'pos'
+      pos <- filter(pos, dropoff_longitude != 0, dropoff_latitude!= 0) # removes all rows with dropoff longitude or latitude equal to zero.
+      pos <- filter(pos, dropoff_longitude != pickup_longitude, dropoff_latitude != pickup_latitude) # removes all rows where pickup and dropoff locations are the same.
+      pos$lat_region <- cut(pos$pickup_latitude,GRID_RESOLUTION) # cuts latitude into bins
+      pos$long_region <- cut(pos$pickup_longitude,GRID_RESOLUTION) # cuts latitude into bins
+grouped <- group_by(pos, lat_region, long_region) %>% summarize(count = n()) # groups data in 'pos' by 'lat_region' and 'long_region' (i.e. by region on the grid) Calculates number of rides being picked up in each region ('count') and the average direction traveled for each taxi rides beginning in each grid (long_dir_avg, lat_dir_avg)
+max <- grouped[order(grouped$count, decreasing =TRUE),][1:N_LOCATIONS,]
+max <- filter(pos, lat_region == max$lat_region & long_region == max$long_region)
+
+grouped_pickup <- group_by(max, pickup_hour, lat_region, long_region) %>% summarize(count = n())
+grouped_pickup$type <- rep("pickup", nrow(grouped_pickup))
+
+head(grouped_pickup)
+```
+
+```{r}
+rm(pos, grouped, max)
+pos <- filter(data, dropoff_longitude < MAXLONG, dropoff_longitude > MINLONG, dropoff_latitude < MAXLAT, dropoff_latitude > MINLAT) # selects all taxi rides whose pickup was within the specified region. Stores these rides to a new data frame 'pos'
+      pos <- filter(pos, pickup_longitude != 0, pickup_latitude!= 0) # removes all rows with dropoff longitude or latitude equal to zero.
+      pos <- filter(pos, dropoff_longitude != pickup_longitude, dropoff_latitude != pickup_latitude) # removes all rows where pickup and dropoff locations are the same.
+      pos$lat_region <- cut(pos$dropoff_latitude,GRID_RESOLUTION) # cuts latitude into bins
+      pos$long_region <- cut(pos$dropoff_longitude,GRID_RESOLUTION)
+      
+grouped <- group_by(pos, lat_region, long_region) %>% summarize(count = n()) # groups data in 'pos' by 'lat_region' and 'long_region' (i.e. by region on the grid) Calculates number of rides being picked up in each region ('count') and the average direction traveled for each taxi rides beginning in each grid (long_dir_avg, lat_dir_avg)
+max <- grouped[order(grouped$count, decreasing =TRUE),][1:N_LOCATIONS,]
+max <- filter(pos, lat_region == max$lat_region & long_region == max$long_region)
+
+grouped_dropoff <- group_by(max, pickup_hour, lat_region, long_region) %>% summarize(count = n())
+grouped_dropoff$type <- rep("dropoff", nrow(grouped_dropoff))
+
+head(grouped_dropoff)
+```
+      
+      
+```{r}
+
+dat <- bind_rows(ungroup(grouped_pickup), ungroup(grouped_dropoff))
+grid <- data.frame(latitude = dat$lat_region,longitude = dat$long_region)
+grid <- unique(grid)
+grid$regioncode <- 1:nrow(grid)
+
+dat$region <- rep(NA,nrow(dat))
+
+for(i in 1: nrow(grid)) {
+  dat$region[(as.character(dat$lat_region) == as.character(grid$latitude[i])) & (as.character(dat$long_region) == as.character(grid$longitude[i]))] <- i
+}
+
+dat$region <- as.factor(dat$region)
+
+head(grid)
+```
+```{r}
+temp <-  grid$latitude
+    temp <- gsub("\\(", "", temp)
+    temp <- gsub("\\]", "", temp)
+    temp <- strsplit(temp, ",")
+    temp <- unlist(temp)
+    temp <- as.numeric(temp)
+    grid$max_lat <- temp[2*1:nrow(grid)] # list of latitude upper bounds
+    grid$min_lat <- temp[2*1:nrow(grid)-1] # listof latitude lower bounds
+    grid$avg_lat <- 0.5*(grid$max_lat + grid$min_lat)
+    
+temp <-  grid$longitude
+    temp <- gsub("\\(", "", temp)
+    temp <- gsub("\\]", "", temp)
+    temp <- strsplit(temp, ",")
+    temp <- unlist(temp)
+    temp <- as.numeric(temp)
+    grid$max_long <- temp[2*1:nrow(grid)] # list of latitude upper bounds
+    grid$min_long <- temp[2*1:nrow(grid)-1] # listof latitude lower bounds
+    grid$avg_long <- 0.5*(grid$max_long + grid$min_long)
+    
+grid
+```
+
+
+```{r}
+timeplot <- ggplot(data = dat, aes(x = pickup_hour, y = count, col = region)) + geom_line(size = 1) + labs(title = "Analysis of 5 Most Popular Pickup and Dropoff Sites", x = expression(italic("Hour of Day")), y = expression(italic("Number of Rides"))) + facet_wrap(~ type, ncol =1)
+```
+
+```{r}
+MAXLAT1 <- 40.775
+MINLAT1 <- 40.74
+MAXLONG1 <- -73.965
+MINLONG1<- -73.995
+map <- get_map(location = c(MINLONG1 - 0.01 ,MINLAT1 - 0.01, MAXLONG1 + 0.01, MAXLAT1 + 0.01), source = "google", maptype = "roadmap") # loads google map of desired region
+
+pop_map <- ggmap(map) + # loads map
+  labs(x = expression(italic("Longitude")~"(degrees)"),y = expression(italic("Latitude")~"(degrees)")) + geom_label(aes(jitter(avg_long), jitter(avg_lat), label = regioncode), data = grid, size = 2) + 
+  theme(axis.line = element_blank(), 
+    axis.text.x = element_blank(), 
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(), 
+    axis.title.x = element_blank(), 
+    axis.title.y = element_blank(),plot.margin=unit(c(0,0,0,0),"mm")) +
+  scale_y_continuous(limits=c(MINLAT1, MAXLAT1)) +
+  scale_x_continuous(limits = c(MINLONG1, MAXLONG1))
+```
+```{r}
+grid.arrange(timeplot, pop_map, ncol = 2, widths = c(2,1))
 ```
 
 
