@@ -201,6 +201,10 @@ taxi$avg_speed <- taxi$trip_distance / taxi$trip_duration
 taxi$avg_speed[taxi$avg_speed > 100] <- NA
 ```
 
+Remove NAs
+```{r}
+taxi <- na.omit(taxi)
+```
 
 ## Generic Map Plot Function
 
