@@ -3,22 +3,28 @@ title: "Taxi Outline"
 author: "Christoph, Chris, Carol"
 date: "4/19/2017"
 output: html_document
+fontsize: 8pt
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-### 2015 Yellow Taxi Trip Data - NYC Open Data
+**2015 Yellow Taxi Trip Data - NYC Open Data**
 https://data.cityofnewyork.us/Transportation/2015-Yellow-Taxi-Trip-Data/ba8s-jw6u
+Data set contains a random 10% of taxi rides on May 6th paid with credit card. 
+**Research Questions**
+We focus exploring 3 features: time (`dropoff_datetime`, `pickup_datetime`), 
+location (`dropoff_latitude`, `dropoff_longitude`, `pickup_latitude`, 
+`pickup_longitude`), tips (`tip_amount`). 
+
 
 ```{r, echo=FALSE}
 taxi <- read.csv("taxi_data.csv", as.is = TRUE)
 ```
 
-## Libraries
 
-```{r}
+```{r, echo = FALSE, meassage = FALSE, warning = FALSE, include = FALSE}
 library(dplyr)
 library(ggplot2)
 library(leaps)
@@ -30,10 +36,9 @@ library(gridExtra)
 library(grid)
 ```
 
-## Cleaning
 
-Create `tip_pct`
 ```{r, echo=FALSE}
+# Create `tip_pct`
 taxi <- taxi %>% mutate(tip_pct = (tip_amount / fare_amount) * 100)
 
 # Remove observation where tip_pct > 100
@@ -41,17 +46,16 @@ taxi <- taxi[-c(which(taxi$tip_pct == "NaN"), which(taxi$tip_pct == "Inf")),]
 taxi <- taxi[taxi$tip_pct <= 50,]
 ```
 
-Create `pickup_hour` and `dropoff_hour`
 ```{r, echo=FALSE}
+# Create `pickup_hour` and `dropoff_hour`
 taxi$pickup_hour <- substr(taxi$pickup_datetime, 12, 13)
 taxi$pickup_hour <- as.numeric(taxi$pickup_hour)
 taxi$dropoff_hour <- substr(taxi$dropoff_datetime, 12, 13)
 taxi$dropoff_hour <- as.numeric(taxi$dropoff_hour)
 ```
 
-Only consider longitudes and latitudes in Manhatten
-
 ```{r, echo=FALSE}
+# Only consider longitudes and latitudes in Manhatten
 MAXLAT <- 40.85
 MINLAT <- 40.675
 MAXLONG <- -73.85
@@ -62,19 +66,18 @@ taxi <- filter(taxi, dropoff_longitude < MAXLONG, dropoff_longitude > MINLONG,
                dropoff_latitude < MAXLAT, dropoff_latitude > MINLAT)
 ```
 
-Remove `trip_distance` = 0
 ```{r, echo=FALSE}
+# Remove `trip_distance` = 0
 taxi <- taxi[!(taxi$trip_distance == 0),]
 ```
 
-Remove `passenger_count` = 0 and create factor variable for passenger count
 ```{r, echo=FALSE}
+# Remove `passenger_count` = 0 and create factor variable for passenger count
 taxi <- taxi[taxi$passenger_count > 0,]
-factor_passengers <- as.factor(taxi$passenger_count)
 ```
 
-Create `trip_duration`
 ```{r, echo=FALSE}
+# Create `trip_duration`
 taxi$pickup_datetime <- ymd_hms(taxi$pickup_datetime)
 taxi$dropoff_datetime <- ymd_hms(taxi$dropoff_datetime)
 taxi$trip_duration <- (taxi$dropoff_datetime - taxi$pickup_datetime) / 3600
@@ -82,20 +85,18 @@ taxi$trip_duration <- as.numeric(taxi$trip_duration)
 taxi$trip_duration[taxi$trip_duration == 0] <- NA
 ```
 
-Create `avg_speed`
 ```{r, echo=FALSE}
+# Create `avg_speed`
 taxi$avg_speed <- taxi$trip_distance / taxi$trip_duration
 taxi$avg_speed[taxi$avg_speed > 100] <- NA
 ```
 
-Remove NAs
-```{r}
+```{r, echo=FALSE}
+# Remove NAs
 taxi <- na.omit(taxi)
 ```
 
-## Generic Map Plot Function
-
-```{r}
+```{r, echo=FALSE}
 # Gives Heat Plot of Manhattan showing average of desired variable for each region. 
   # data: data frame from which data is drawn
   # varialbe: vector of the variable under consideration
@@ -176,31 +177,29 @@ locationPlot <- function(data, variable, lat_type = "pickup", GRID_RESOLUTION = 
 }
 ```
 
-### Research Questions
-We are particularly interested in exploring 3 features of this taxi trips 
-dataset: time (`dropoff_datetime` and `pickup_datetime`), location 
-(`dropoff_latitude`, `dropoff_longitude`, `pickup_latitude`, and
-`pickup_longitude`), and payments, specifically tips (`tip_amount`). 
-
-## What factors predict how much (as a percentage of their total fare) a person tips?
-
+**What factors predict how much (as a percentage of their total fare) a person tips?**
 * Do people tip more if there are more passengers in the car (perhaps due to 
 social pressure)? 
-
-```{r, echo=FALSE}
-ggplot(taxi, aes(x = as.factor(passenger_count), y = tip_pct)) + 
-  geom_boxplot() +
-  labs(title = "Percentage Tipped by Number of Passengers", x = 
-    "Number of Passengers", y = "Percentage Tipped")
+```{r, fig.width = 3, fig.height= 2}
+ggplot(taxi, aes(x = as.factor(passenger_count), y = tip_pct)) + geom_boxplot() + labs(title = "Tip % by # of Passengers", x = "Number of Passengers", y = "Percentage Tipped")
 ```
+Tip percentage does not appear to change with more passengers. Average tip stays 
+around the standard 20%. We will explore where larger groups tend to travel. 
+For example, we predict that larger groups may travel to more touristy areas.
 
 * Do people tip more if they get to where they are going more quickly?
+```{r, fig.width = 2.5, fig.height= 2}
+ggplot(taxi, aes(x = avg_speed, y = tip_pct)) + geom_smooth(method = lm) + labs(title = "Tip % by Avg Speed", x = "Average Speed (mph)", y = "Percentage Tipped")
+```
+There's a positive correlation between `avg_speed` and `tip_pct`, so passengers 
+tip more if they get to where they are going quicker.
 
-```{r, echo = FALSE}
+```{r, eval = FALSE, echo = FALSE}
+# Break down into different speed groups
 speeds <- taxi %>% mutate(avg_speedCat = cut(avg_speed, c(0, 10, 20, 30, 40))) %>%
   group_by(avg_speedCat) %>%
   summarize(mavg_speed = mean(avg_speed), mtip_pct = mean(tip_pct))
-#mspeedCat <- lm(mtip_pct ~ mavg_speed, data = speeds)
+mspeedCat <- lm(mtip_pct ~ mavg_speed, data = speeds)
 
 ggplot(speeds[1:5,], aes(x = mavg_speed, y = mtip_pct)) + 
   geom_point() +
@@ -209,67 +208,67 @@ ggplot(speeds[1:5,], aes(x = mavg_speed, y = mtip_pct)) +
     "Average Speed (mph)", y = "Percentage Tipped")
 ```
 
-* All-subsets regression
-
-```{r, echo = FALSE}
+* All-subsets regression to explore which variables have the greatest effect on
+`tip_pct`
+```{r, echo=FALSE}
 r1 = regsubsets(tip_pct ~ pickup_hour + pickup_latitude + pickup_longitude +  
                   dropoff_hour + dropoff_latitude + dropoff_longitude + 
                   passenger_count + tolls_amount + extra + vendor_id + 
                   avg_speed, data = taxi, nvmax = 11)
 r1s <- summary(r1)
-r1s$which
-plot(r1s$rsq, main = "R-squareds of Models with Increasingly More Variables", 
-     ylab = "R-sqaured")
+# r1s$which
+# plot(r1s$rsq, main = "R-squareds of Models with Increasingly More Variables", 
+#      ylab = "R-sqaured")
 
-plot(r1s$cp, main = "Mallows' Cp of Models with Increasingly More Variables", 
-     ylab = "Cp")
-
-which.min(r1s$cp)
 bestwhich <- r1s$which[which.min(r1s$cp),]
 best_vars <- names(bestwhich[bestwhich == TRUE])
 best_vars <- best_vars[-1]
-best_vars
-```
-
-```{r, echo=FALSE}
-plot(r1, scale="Cp", main = "Most Important Predictors in Different Size Models")
 mbest <- lm(tip_pct ~ pickup_hour + tolls_amount + extra + avg_speed, 
             data = taxi)
-summary(mbest)
+#plot(r1, scale="Cp", main = "Most Important Predictors in Different Size Models")
 ```
-
-* Explore interaction effects:
-
-
-
-* Do tips change by region of NYC (ie: more tips in the financial district)?
 
 ```{r}
-locationPlot(taxi, taxi$total_amount, "pickup", title = "Average Tip by Region", 
-             varname = "Tip Pct")
+coef(mbest)
 ```
+
+* Additional Model Analysis
+We will divide NYC into regions of NYC, to see if certain areas tip more than others.
+Also, we will look at interaction plots to determine which variables to interact 
+in the subsequent model.
+
+* Do tips change by region of NYC (ie: more tips in the financial district)?
+```{r, message=FALSE, warning=FALSE, fig.width = 3, fig.height= 3}
+locationPlot(taxi[taxi$tip_pct <= 50,], taxi$tip_pct, "dropoff", title = "AvgTip by Region", varname = "TipPct")
+```
+
+In central Manhattan, most people tip around the standard 20%. As you go 
+outward, there is more variability, which we will explore.
 
 * What affects whether or not people tip more than 25%? (stepwise logistic 
 regression)
-
 ```{r, echo = FALSE}
 taxi$tip25 <- factor(ifelse(taxi$tip_pct >= 25, "Yes", "No"))
 m25all <- glm(tip25 ~ pickup_hour + pickup_latitude + pickup_longitude +  
                 dropoff_hour + dropoff_latitude + dropoff_longitude + 
                 passenger_count + tolls_amount + extra + vendor_id + 
                 avg_speed, data = taxi, family = binomial)
-m25step <- step(m25all, direction = "backward")
-
-m25best <- glm(tip25 ~ pickup_latitude + tolls_amount + extra + avg_speed, 
-               data = taxi, family = binomial)
-summary(m25best)
+m25step <- step(m25all, direction = "backward", trace = 0)
 ```
 
+```{r}
+m25best <- glm(tip25 ~ dropoff_longitude + pickup_longitude + pickup_latitude + 
+               tolls_amount + extra, data = taxi, family = binomial)
+coef(m25best)
+```
+
+m25best tries to predict whether or not a passenger tips more than
+25% using 5 variables deemed most significant from a backward stepwise 
+regression. `pickup_latitude` has the biggest effect.
 
 * What affects whether or not people tip less than 15%? (stepwise logistic 
 regression)
-
-```{r, echo = FALSE}
+```{r, eval=FALSE, echo=FALSE}
 taxi$tip15 <- factor(ifelse(taxi$tip_pct <= 15, "Yes", "No"))
 m15all <- glm(tip25 ~ pickup_hour + pickup_latitude + pickup_longitude +  
                 dropoff_hour + dropoff_latitude + dropoff_longitude + 
@@ -278,25 +277,291 @@ m15all <- glm(tip25 ~ pickup_hour + pickup_latitude + pickup_longitude +
 m15step <- step(m15all, direction = "backward")
 ```
 
-```{r, echo=FALSE}
+```{r, eval=FALSE, echo=FALSE}
 m15best <- glm(tip15 ~ pickup_latitude + tolls_amount + extra + avg_speed, 
                data = taxi, family = binomial)
 summary(m15best)
 ```
 
-* Do people tip the same percentage for tolls and extra charges as they do for 
-their overall fare?
+**How do trips change with location and time of day?**
+* What are the most popular pickup and drop off locations in New York? How does 
+this change by time of day? Are the most popular pickup locations also the most 
+popular dropoff locations?
+```{r, warning = FALSE, message = FALSE, echo = FALSE, results = 'hide'}
+data <- taxi 
+GRID_RESOLUTION <- 40
+title <-  "Add Title"
+varname <-  "Variable"
+N_LOCATIONS <- 5
 
+# Select all taxi rides whose pickup was within the specified region. Stores 
+# these rides to a new data frame 'pos'
+pos <- filter(data, pickup_longitude < MAXLONG, pickup_longitude > MINLONG, 
+              pickup_latitude < MAXLAT, pickup_latitude > MINLAT) 
 
+# Remove all rows with dropoff longitude or latitude equal to zero
+pos <- filter(pos, dropoff_longitude != 0, dropoff_latitude!= 0) 
+# Remove all rows where pickup and dropoff locations are the same.
+pos <- filter(pos, dropoff_longitude != pickup_longitude, 
+              dropoff_latitude != pickup_latitude) 
 
-## How do trips change with location and time of day?
-* What are the most popular pickup and drop off locations in New York? 
-* How does this change by time of day?
-* Are the most popular pickup locations also the most popular dropoff locations?
-  * For example, do people take more taxis to JFK than from JFK (based on 
-  rate_code variable == 1) 
-* Barchart of number of pickups every hour at the 5 most popular locations.
-* What is the average speed of taxis depending on the time of day and region of 
-the city? 
+pos$lat_region <- cut(pos$pickup_latitude,GRID_RESOLUTION) # cuts latitude into bins
+pos$long_region <- cut(pos$pickup_longitude,GRID_RESOLUTION) # cuts latitude into bins
+
+# Groups data in 'pos' by 'lat_region' and 'long_region' (region on the grid) 
+# Calculates number of rides being picked up in each region ('count') and the 
+# average direction traveled for each taxi rides beginning in each grid (long_dir_avg, 
+# lat_dir_avg)
+grouped <- group_by(pos, lat_region, long_region) %>% summarize(count = n()) 
+
+# Create new data frame 'max' containing the regions with the most pickups
+max <- grouped[order(grouped$count, decreasing =TRUE),][1:N_LOCATIONS,] 
+
+# Create data frame of all taxi rides starting fromthese region
+max <- filter(pos, lat_region == max$lat_region & long_region == max$long_region) 
+
+# Groups data by pickup_hour, latitude, and longitude and counts how many rides are in 
+# each group
+grouped_pickup <- group_by(max, pickup_hour, lat_region, long_region) %>% 
+                    summarize(count = n()) 
+
+# Add column identifying rides as "pickup"
+grouped_pickup$type <- rep("pickup", nrow(grouped_pickup)) 
+```
+
+```{r, echo = FALSE,  results = 'hide', warning = FALSE, message = FALSE}
+rm(pos, grouped, max)
+
+# Select all taxi rides whose dropoff was within the specified region. Stores 
+# these rides to a new data frame 'pos'
+pos <- filter(data, dropoff_longitude < MAXLONG, dropoff_longitude > MINLONG, 
+              dropoff_latitude < MAXLAT, dropoff_latitude > MINLAT) 
+
+# Remove all rows with pickup longitude or latitude equal to zero.
+pos <- filter(pos, pickup_longitude != 0, pickup_latitude!= 0) 
+# Remove all rows where pickup and dropoff locations are the same.
+pos <- filter(pos, dropoff_longitude != pickup_longitude, 
+              dropoff_latitude != pickup_latitude) 
+
+pos$lat_region <- cut(pos$dropoff_latitude,GRID_RESOLUTION) # cuts latitude into bins
+pos$long_region <- cut(pos$dropoff_longitude,GRID_RESOLUTION) # cuts longitude into bins
+      
+# Group data in 'pos' by 'lat_region' and 'long_region' (i.e. by region on the 
+# grid). Calculates number of rides being picked up in each region ('count') 
+# and the average direction traveled for each taxi rides beginning in each grid 
+# (long_dir_avg, lat_dir_avg)
+grouped <- group_by(pos, lat_region, long_region) %>% summarize(count = n()) 
+
+# Create new data frame 'max' containing the regions with the most dropoffs
+max <- grouped[order(grouped$count, decreasing =TRUE),][1:N_LOCATIONS,]
+
+# Create data frame of all taxi rides going to these region
+max <- filter(pos, lat_region == max$lat_region & long_region == max$long_region) 
+
+# Groups data by pickup_hour, latitude, and longitude and counts how many rides are in each group
+grouped_dropoff <- group_by(max, pickup_hour, lat_region, long_region) %>% summarize(count = n()) 
+
+# Identifies data as "dropoff"
+grouped_dropoff$type <- rep("dropoff", nrow(grouped_dropoff)) 
+```
+      
+      
+```{r, echo = FALSE,  results = 'hide', warning = FALSE, message = FALSE}
+# Combine data tables "grouped_pickup" and "grouped_dropoff" into  a new data 
+# frame 'dat'
+dat <- bind_rows(ungroup(grouped_pickup), ungroup(grouped_dropoff)) 
+
+# Create data frame of latitudes and longitudes
+grid <- data.frame(latitude = dat$lat_region,longitude = dat$long_region) 
+grid <- unique(grid) # removes duplicates
+
+grid$regioncode <- 1:nrow(grid) # gives each region its own integer code
+
+# Classify rides in 'dat' by region
+dat$region <- rep(NA,nrow(dat))
+for(i in 1: nrow(grid)) {
+  dat$region[(as.character(dat$lat_region) == as.character(grid$latitude[i])) & 
+       (as.character(dat$long_region) == as.character(grid$longitude[i]))] <- i
+} 
+
+dat$region <- as.factor(dat$region)
+```
+
+```{r, echo = FALSE, results = 'hide', warning = FALSE, message = FALSE}
+temp <-  grid$latitude
+temp <- gsub("\\(", "", temp)
+temp <- gsub("\\]", "", temp)
+temp <- strsplit(temp, ",")
+
+# Split region boundaries from 'cut()' into upper and lower latitudes
+temp <- unlist(temp)
+temp <- as.numeric(temp)
+grid$max_lat <- temp[2*1:nrow(grid)] # list of latitude upper bounds
+grid$min_lat <- temp[2*1:nrow(grid)-1] # list of latitude lower bounds
+grid$avg_lat <- 0.5*(grid$max_lat + grid$min_lat) # list of average region latitudes
+    
+temp <-  grid$longitude # stores longitude bounds of regions to 'temp'
+temp <- gsub("\\(", "", temp)
+temp <- gsub("\\]", "", temp)
+temp <- strsplit(temp, ",")
+
+# Split region boundaries from 'cut()' into upper and lower longitudes
+temp <- unlist(temp)
+temp <- as.numeric(temp)
+grid$max_long <- temp[2*1:nrow(grid)] # list of latitude upper bounds
+grid$min_long <- temp[2*1:nrow(grid)-1] # list of latitude lower bounds
+grid$avg_long <- 0.5*(grid$max_long + grid$min_long) # list of average region longitudes
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+timeplot <- ggplot(data = dat, aes(x = pickup_hour, y = count, col = region)) +
+  geom_line(size = 1) +
+  labs(title = "Analysis of 5 Most Popular Pickup and Dropoff Sites", 
+       x = expression(italic("Hour of Day")), 
+       y = expression(italic("Number of Rides"))) + 
+  facet_wrap(~ type, ncol =1)
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+MAXLAT1 <- 40.775
+MINLAT1 <- 40.74
+MAXLONG1 <- -73.965
+MINLONG1<- -73.995
+map <- get_map(location = c(MINLONG1 - 0.01 ,MINLAT1 - 0.01, MAXLONG1 + 0.01, 
+                     MAXLAT1 + 0.01), source = "google", maptype = "roadmap") 
+
+pop_map <- ggmap(map) +
+  labs(x = expression(italic("Longitude")~"(degrees)"),
+       y = expression(italic("Latitude")~"(degrees)")) +
+  geom_label(aes(jitter(avg_long), jitter(avg_lat),label = regioncode), 
+             data = grid, size = 2) + 
+  theme(axis.line = element_blank(), 
+    axis.text.x = element_blank(), 
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(), 
+    axis.title.x = element_blank(), 
+    axis.title.y = element_blank(),plot.margin=unit(c(0,0,0,0),"mm")) +
+  scale_y_continuous(limits=c(MINLAT1, MAXLAT1)) + 
+  scale_x_continuous(limits = c(MINLONG1, MAXLONG1))
+```
+
+```{r, warning = FALSE, message = FALSE, fig.width = 5, fig.height= 3}
+grid.arrange(timeplot, pop_map, ncol = 2, widths = c(2,1))
+```
+Regions 1-5 are the most popular taxi pickup sites (1 = most popular, 5 = least). 
+egions 6-10 are the most popular dropoff sites. Dropoff sites tend be most 
+active at 7-8 AM. Pickup sites are most active at 8-9 PM. We will next 
+investigate how popular pickup sites rank in terms of dropoff sites and vice 
+versa.
+  
 * Which directions are taxis traveling on average at different times of the day? 
-(net movement into the city in the morning and net movement out in the evenings)
+```{r, warning = FALSE, message = FALSE, echo = FALSE, results = 'hide'}
+# Remove rows with abnormal dropoff longitudes
+rm(pos, grouped)
+MAXLAT <- 40.85
+MINLAT <- 40.675
+MAXLONG <- -73.85
+MINLONG <- -74.1
+SIZEFACTOR  <-  0.015 # Desired Magnitude of Direction Arrows
+GRID_RESOLUTION <- 25
+
+# Select all taxi rides whose pickup was within the specified region. Stores 
+# these rides to a new data frame 'pos'
+pos <- filter(taxi, pickup_longitude < MAXLONG, pickup_longitude > MINLONG, 
+              pickup_latitude < MAXLAT, pickup_latitude > MINLAT) 
+
+# Remove all rows with dropoff longitude or latitude equal to zero.
+pos <- filter(pos, dropoff_longitude != 0, dropoff_latitude!= 0) 
+
+# Remove all rows where pickup and dropoff locations are the same.
+pos <- filter(pos, dropoff_longitude != pickup_longitude, 
+              dropoff_latitude != pickup_latitude) 
+
+pos$lat_region <- cut(pos$pickup_latitude,GRID_RESOLUTION) # cuts latitude into bins
+pos$long_region <- cut(pos$pickup_longitude,GRID_RESOLUTION) # cuts latitude into bin
+```
+
+```{r, echo = FALSE, results = 'hide', warning = FALSE, message = FALSE}
+# Add rows 'lat_dir' and 'long_dir' to the data frame 'pos' which respectively 
+# contain the change in latitude and longitude for each ride.
+pos <- mutate(pos, lat_dir = (dropoff_latitude - pickup_latitude), 
+              long_dir = (dropoff_longitude - pickup_longitude)) 
+
+# Create columns 'lat_dir_scaled' and 'long_dir_scaled', which contain the 
+# coordinates of 'lat_dir' and 'long_dir' normalized so that the direction 
+# vector has magnitude equal to 'SIZEFACTOR'
+pos <- mutate(pos, lat_dir_scaled = lat_dir * SIZEFACTOR/sqrt(lat_dir^2 + long_dir^2), 
+              long_dir_scaled = long_dir * SIZEFACTOR /sqrt(lat_dir^2 + long_dir^2)) 
+
+# Note: NaN results for rides where pickup and dropoff locations are equal.
+
+pos$daytime <- rep(NA, nrow(pos))
+
+# Create new column of pos indicating whether pickup-time was in the morning or evening
+pos$daytime <- ifelse(pos$pickup_hour < 12, "morning", "evening") 
+pos$daytime <- factor(pos$daytime, levels= c("morning","evening"))
+```
+
+```{r,warning = FALSE, message = FALSE, echo = FALSE, results = 'hide'}
+# Groups data in 'pos' by 'lat_region' and 'long_region' (i.e. by region on the 
+# grid). Calculates number of rides being picked up in each region ('count') and 
+# the average direction traveled for each taxi rides beginning in each grid 
+# (long_dir_avg, lat_dir_avg)
+grouped <- group_by(pos, lat_region, long_region, daytime) %>% 
+  summarize(lat_dir_avg = mean(lat_dir_scaled, na.rm = TRUE), 
+            long_dir_avg = mean(long_dir_scaled, na.rm =TRUE), count = n()) 
+
+temp <-  grouped$lat_region 
+temp <- gsub("\\(", "", temp)
+temp <- gsub("\\]", "", temp)
+temp <- strsplit(temp, ",")
+temp <- unlist(temp)
+temp <- as.numeric(temp)
+grouped$max_lat <- temp[2*1:nrow(grouped)] # list of latitude upper bounds
+grouped$min_lat <- temp[2*1:nrow(grouped)-1] # list of latitude lower bounds
+grouped$avg_lat <- 0.5*(grouped$max_lat + grouped$min_lat) # list of average latitude
+    
+temp <-  grouped$long_region
+temp <- gsub("\\(", "", temp)
+temp <- gsub("\\]", "", temp)
+temp <- strsplit(temp, ",")
+temp <- unlist(temp)
+temp <- as.numeric(temp)
+grouped$max_long <- temp[2*1:nrow(grouped)] # list of latitude upper bounds
+grouped$min_long <- temp[2*1:nrow(grouped)-1] # list of latitude lower bounds
+grouped$avg_long <- 0.5*(grouped$max_long + grouped$min_long) # list of average longitude
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE, results = 'hide'}
+heatplot <- ggplot(data = grouped, aes(xmin = min_long, xmax = max_long, 
+                   ymin = min_lat, ymax = max_lat, fill = count)) + 
+  geom_rect() + 
+  scale_fill_gradientn("Number of Pickups", 
+                       colors = c("purple","blue","green","yellow", "orange", "red")) + 
+  facet_wrap(~daytime)
+```
+
+```{r, warning = FALSE, message = FALSE, echo=FALSE, fig.width = 9, fig.height= 3}
+MAXLAT1 <- 40.8
+MINLAT1 <- 40.7
+MAXLONG1 <- -73.92
+MINLONG1<- -74.03
+MINRIDES <-  30 # minimum number of rides for arrow to show up
+
+map <- get_map(location = c(MINLONG, MINLAT, MAXLONG, MAXLAT), source = "stamen", 
+               maptype = "watercolor", color = "bw")
+```
+
+```{r, warning = FALSE, message = FALSE, fig.width = 5.5, fig.height= 3}
+ggmap(map) + geom_segment(aes(x = avg_long, xend = (avg_long + long_dir_avg), y = avg_lat, yend = (avg_lat + lat_dir_avg), color = count), data = filter(grouped, count > MINRIDES), arrow = arrow(length=unit(0.15, "cm"), ends="first", type = "closed"), size = 0.9) + labs(title = "Direction of Motion by Region", x = expression(italic("Longitude")~"(degrees)"), y = expression(italic("Latitude")~"(degrees)")) + scale_color_gradientn("Number of Rides", colors = c("purple","blue","green","yellow","orange","red")) + facet_wrap( ~ daytime) + scale_y_continuous(limits=c(MINLAT1, MAXLAT1)) + scale_x_continuous(limits = c(MINLONG1, MAXLONG1))
+```
+There is a general outward flux of taxis. Taxi rides starting farther from 
+center tend to agree more on the outward direction (longer arrows). We will 
+facet into more time catagories. We might investigate where outward directed 
+taxis are going
+
+* What is the average speed of taxis depending on the time of day and region of 
+the city?
+To do this, we would create a heat map of Manhattan where different colors 
+indicate different travel speeds of taxis.
+
