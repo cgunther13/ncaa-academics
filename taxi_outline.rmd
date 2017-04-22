@@ -88,6 +88,11 @@ taxi$avg_speed <- taxi$trip_distance / taxi$trip_duration
 taxi$avg_speed[taxi$avg_speed > 100] <- NA
 ```
 
+Remove NAs
+```{r}
+taxi <- na.omit(taxi)
+```
+
 ## Generic Map Plot Function
 
 ```{r}
@@ -137,7 +142,6 @@ locationPlot <- function(data, variable, lat_type = "pickup", GRID_RESOLUTION = 
   # (long_dir_avg, lat_dir_avg)
   grouped <- group_by(pos, lat_region, long_region) %>% 
     summarize(count = n(), var = mean(variable)) 
-  print(max(grouped$var))
 
   temp <-  grouped$lat_region
   temp <- gsub("\\(", "", temp)
@@ -211,7 +215,7 @@ ggplot(speeds[1:5,], aes(x = mavg_speed, y = mtip_pct)) +
 r1 = regsubsets(tip_pct ~ pickup_hour + pickup_latitude + pickup_longitude +  
                   dropoff_hour + dropoff_latitude + dropoff_longitude + 
                   passenger_count + tolls_amount + extra + vendor_id + 
-                  avg_speed, data = taxi, nvmax = 10)
+                  avg_speed, data = taxi, nvmax = 11)
 r1s <- summary(r1)
 r1s$which
 plot(r1s$rsq, main = "R-squareds of Models with Increasingly More Variables", 
