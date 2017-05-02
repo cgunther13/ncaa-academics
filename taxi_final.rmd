@@ -78,7 +78,7 @@ dataset: time (`dropoff_datetime` and `pickup_datetime`), location
 (`dropoff_latitude`, `dropoff_longitude`, `pickup_latitude`, and
 `pickup_longitude`), and payments, specifically tips (`tip_amount`). 
 
-  * What factors predict how much (as a percentage of their total fare) a person 
+  * What factors predict how much (as a percentage of their total bill) a rider 
     tips?
   * What are the most popular pickup and drop off locations in New York and at 
     what times are they most popular? 
@@ -150,36 +150,36 @@ taxi$dropoff_long_region <- cut(taxi$dropoff_longitude, 5)
 taxi$pickup_lat_region <- cut(taxi$pickup_latitude, 5)
 taxi$pickup_long_region <- cut(taxi$pickup_longitude, 5)
 
-# pickup_region <- taxi %>% group_by(pickup_lat_region, pickup_long_region) %>% 
-#   summarize(count = n(), var = mean(tip_pct)) 
-# dropoff_region <- taxi %>% group_by(dropoff_lat_region, dropoff_long_region) %>% 
+# pickup_region <- taxi %>% group_by(pickup_lat_region, pickup_long_region) %>%
+#   summarize(count = n(), var = mean(tip_pct))
+# dropoff_region <- taxi %>% group_by(dropoff_lat_region, dropoff_long_region) %>%
 #   summarize(count = n(), var = mean(tip_pct))
 
-# taxi$pickup_region <- rep(0, nrow(taxi))
-# for(i in 1:nrow(taxi)) {
-#   count <- 1
-#   for(j in levels(taxi$pickup_lat_region)) {
-#     for(k in levels(taxi$pickup_long_region)) {
-#       if(taxi$pickup_lat_region[i] == j & taxi$pickup_long_region[i] == k) {
-#         taxi$pickup_region[i] <- count
-#       }
-#       count <- count + 1
-#     }
-#   }
-# }
-# 
-# taxi$dropoff_region <- rep(0, nrow(taxi))
-# for(i in 1:nrow(taxi)) {
-#   count <- 1
-#   for(j in levels(taxi$dropoff_lat_region)) {
-#     for(k in levels(taxi$dropoff_long_region)) {
-#       if(taxi$dropoff_lat_region[i] == j && taxi$dropoff_long_region[i] == k) {
-#         taxi$dropoff_region[i] <- count
-#       }
-#       count <- count + 1
-#     }
-#   }
-# }
+taxi$pickup_region <- rep(0, nrow(taxi))
+for(i in 1:nrow(taxi)) {
+  count <- 1
+  for(j in levels(taxi$pickup_lat_region)) {
+    for(k in levels(taxi$pickup_long_region)) {
+      if(taxi$pickup_lat_region[i] == j & taxi$pickup_long_region[i] == k) {
+        taxi$pickup_region[i] <- count
+      }
+      count <- count + 1
+    }
+  }
+}
+
+taxi$dropoff_region <- rep(0, nrow(taxi))
+for(i in 1:nrow(taxi)) {
+  count <- 1
+  for(j in levels(taxi$dropoff_lat_region)) {
+    for(k in levels(taxi$dropoff_long_region)) {
+      if(taxi$dropoff_lat_region[i] == j && taxi$dropoff_long_region[i] == k) {
+        taxi$dropoff_region[i] <- count
+      }
+      count <- count + 1
+    }
+  }
+}
 ```
 
 
@@ -213,8 +213,8 @@ taxi$avg_speed[taxi$avg_speed > 50] <- 50
 
 ```{r, echo=FALSE}
 # Remove NAs
-which(is.na(taxi))
-taxi <- na.omit(taxi)
+#which(is.na(taxi))
+#taxi <- na.omit(taxi)
 ```
 
 
@@ -299,10 +299,14 @@ locationPlot <- function(data, variable, lat_type = "pickup", GRID_RESOLUTION = 
 }
 ```
 
-**What factors predict how much (as a percentage of their total fare) a person tips?**
+```{r}
+#plot(taxi[,c(5,7,15,16,17,19,20,21,22,23,28,29,30,31)])
+```
 
-* Do people tip more if there are more passengers in the car (perhaps due to 
-social pressure)? 
+
+**1) What factors predict how much (as a percentage of their total fare) a person tips?**
+
+* Do people tip more if there are more passengers in the car? 
 
 ```{r, fig.width = 3, fig.height= 2}
 ggplot(taxi, aes(x = as.factor(passenger_count), y = tip_pct)) + 
@@ -318,11 +322,23 @@ anova(mpassengers)
 pairwise.t.test(taxi$tip_pct, taxi$passenger_count)
 ```
 
-Tip percentage does not appear to change with more passengers. Average tip stays 
-around the standard 20%.
+Our hypothesis was that riders would tip more as the number of passengers 
+increased, due to a social pressure exerted from the other passengers to tip 
+more. However, the boxplot shows that all riders tip the same (median of 20%) 
+regardless of how many people were in the car. Further, the regression gives a
+coefficient on `passenger_count` around 0, and it is not significant at any 
+reasonable level and the pairwise t-test shows that no two levels of 
+`passenger_count` are different from one another.
+
+While this result contradicts our initial hypothesis, it makes sense because of 
+the salience of the 20% tip. Most people have been taught, through social norms, 
+that 20% is the standard tip, and give that regardless of how many people are 
+traveling with them. Further, since the 20% tip is so standard, few passengers 
+would disapprove of a 20% tip, so the paying riders need not worry about looking 
+cheap and can stick with the 20% heuristic. 
 
 
-* Do people tip more if they get to where they are going more quickly?
+* Do people tip more if the taxi drives more quickly?
 
 ```{r, fig.width = 2.5, fig.height= 2}
 ggplot(subset(taxi, tip_pct <= 50), aes(x = avg_speed, y = tip_pct)) + 
@@ -337,20 +353,38 @@ mspeed <- lm(tip_pct ~ avg_speed, data = taxi)
 summary(mspeed)
 ```
 
+Here our hypothesis was that people would tip more the higher the average speed,
+because people generally don't like waiting in traffic, so if they get to where
+they are going more quickly, relative to how far they are traveling, they would
+give a higher tip to thank the driver. However, once again, the model gives a 
+very small, not very significant coefficient on `avg_speed` and the scatterplot  
+shows the salience of the ~20% tip, as that is the predicted tip regardless of 
+the avgerage speed traveled. 
+
+You can even see the ubiquitousness of the 20% tip in this plot with the
+horizantal line of points at 20% tip. Interestingly, there are also horizantal
+lines of points at 25% and 30% tips, also salient amounts, as well as at 0%, 
+or no tip at all, which is also common for a good amount of people.
+
+Further, this plot does show that there is a lot of variance in `tip_pct`, and
+we are not explaining very much of it with our 2 models so far ($R^2$s of 0.065 
+and 0.0002 for the passenger_count and avg_speed models respectively). So, we 
+will continue trying more variables.
+
 ```{r, eval = FALSE, echo = FALSE}
 # Break down into different speed groups
-speeds <- taxi %>% mutate(avg_speedCat = cut(avg_speed, c(0, 10, 20, 30, 40))) %>%
-  group_by(avg_speedCat) %>%
-  summarize(mavg_speed = mean(avg_speed), mtip_pct = mean(tip_pct))
-
-mspeedCat <- lm(mtip_pct ~ mavg_speed, data = speeds)
-summary(mspeedCat)
-
-ggplot(speeds[1:5,], aes(x = mavg_speed, y = mtip_pct)) + 
-  geom_point() +
-  geom_smooth(method = lm) + 
-  labs(title = "Percentage Tipped by Average Speed", x = 
-    "Average Speed (mph)", y = "Percentage Tipped")
+# speeds <- taxi %>% mutate(avg_speedCat = cut(avg_speed, c(0, 10, 20, 30, 40))) %>%
+#   group_by(avg_speedCat) %>%
+#   summarize(mavg_speed = mean(avg_speed), mtip_pct = mean(tip_pct))
+# 
+# mspeedCat <- lm(mtip_pct ~ mavg_speed, data = speeds)
+# summary(mspeedCat)
+# 
+# ggplot(speeds[1:5,], aes(x = mavg_speed, y = mtip_pct)) + 
+#   geom_point() +
+#   geom_smooth(method = lm) + 
+#   labs(title = "Percentage Tipped by Average Speed", x = 
+#     "Average Speed (mph)", y = "Percentage Tipped")
 ```
 
 
@@ -367,65 +401,105 @@ ggplot(subset(taxi, fare_amount < 50), aes(x = fare_amount, y = tip_pct)) +
        y = "Percentage Tipped")
 ```
 
-```{r, echo=FALSE}
-# Including tolls and extra charges
-mtotal <- lm(tip_pct ~ fare_amount + tolls_amount + extra + mta_tax, data = taxi)
-summary(mtotal)
+We believed that people would give larger tips, in percentage terms, the smaller
+their fare amount, because these tips on small amounts are smaller in absolute 
+terms. For example, it would not be uncommon for someone to give a 40% tip on 
+a 5 dollar fare, because that only amounts to 2 dollars. However, a 40% tip on a 
+30 dollar fare (12 dollars) would be less common. 
 
-ggplot(subset(taxi, fare_amount < 50), aes(x = total_amount - tip_amount, y = tip_pct)) + 
-  geom_point() + 
-  geom_smooth() +
-  labs(title = "Percentage Tipped by Total Amount", x = "Total Amount ($)", 
-       y = "Percentage Tipped")
+The data do lend some support to this hypothesis, as there is a downward curving
+pattern to the data points, and the coefficient of `fare_amount` is negative,
+though small (-0.062), and highly signifcant. However, it appears that the 
+regression line plateaus and may even increase slightly after around 20 dollars.
+To test this, we can run a regression including a squared term for fare:
+
+```{r}
+mfare2 <- lm(tip_pct ~ fare_amount + I(fare_amount^2), data = taxi)
+summary(mfare2)
 ```
 
+This confirms of idea from above, as we see the coefficent on `fare_amount` is 
+even more negative now (-0.235) and still highly signifcant, and the coefficient
+on fare_amount^2 is slightly positive (0.004), and highly significant, meaning 
+there is a slight U-shape to the data. In context, this means that people tips, 
+percentage wise, are highest at the low fares, drop slightly as the fares 
+increase for a while, and then rise back up. 
+
+```{r, echo=FALSE}
+# Including tolls and extra charges
+mtotal <- lm(tip_pct ~ fare_amount + I(fare_amount^2) + tolls_amount, data = taxi)
+summary(mtotal)
+```
+
+Adding `tolls_amount` to the regression, does not change the coefficients on
+the `fare_amount` variables, but we see that tolls has a significant coefficient
+of 0.271, meaning that for a 1 dollar increase in tolls, we would expect a 
+rider to tip 0.271% more. This could make sense since going through a toll booth
+is often a hassle for drivers, even with an EazyPass, because of traffic, so 
+the riders could be thanking the taxi drivers for going through the trouble by
+giving a slightly higher tip.
 
 * Do people tip more at different times of day?
 
 ```{r, echo=FALSE}
 mpickup_time <- lm(tip_pct ~ pickup_time, data = taxi)
+anova(mpickup_time)
+pairwise.t.test(taxi$tip_pct, taxi$pickup_time)
 summary(mpickup_time)
 
-mdropoff_time <- lm(tip_pct ~ dropoff_time, data = taxi)
-summary(mdropoff_time)
-
-mtime <- lm(tip_pct ~ pickup_time + dropoff_time, data = taxi)
-summary(mtime)
+# mdropoff_time <- lm(tip_pct ~ dropoff_time, data = taxi)
+# anova(mdropoff_time)
+# pairwise.t.test(taxi$tip_pct, taxi$dropoff_time)
+# summary(mdropoff_time)
 ```
 
 ```{r, echo=FALSE}
-ggplot(taxi, aes(x = pickup_time, y = tip_pct)) + 
+ggplot(taxi[taxi$tip_pct < 50,], aes(x = pickup_time, y = tip_pct)) + 
   geom_boxplot() + 
   labs(title = "Percentage Tipped by Time of Day", x = "Time of Day", y = "Percentage Tipped")
 ```
 
 ```{r, echo=FALSE}
-ggplot(taxi, aes(x = pickup_hour, y = tip_pct)) + 
-  geom_jitter() + 
-  labs(title = "Percentage Tipped by Time of Day", x = "Time of Day", y = "Percentage Tipped")
+# ggplot(taxi, aes(x = pickup_hour, y = tip_pct)) + 
+#   geom_jitter() + 
+#   labs(title = "Percentage Tipped by Time of Day", x = "Time of Day", y = "Percentage Tipped")
 ```
 
+Moving on, we decided to look at how tip giving bahvior changes throughout the
+day. In terms of `pickup_time`, the p-value on the F-statistic is significant at
+the 0.05 significance level, meaning one of the levels of `pickup_time` is 
+significantly different from the others. Looking at the pairwise t-test, we see
+that Night is significantly different from Morning, Afternoon, and Evening at 
+the 0.05 significance level. No other levels are signifcantly different. 
+Finally, looking at the regression summary, we see that tips at Night (midnight
+to 5 AM) are about 0.409% less on average than tips during the Morning, and the
+other times of the day.
+
+Note: There are very similar results for `dropoff_time`, and running a combined 
+regression with both `pickup_time` and `drop_off` time included did not make 
+much of a difference from these two separate regressions.
 
 * Do people tip more in different areas?
 
 ```{r, echo=FALSE}
-mpickup_lat <- lm(tip_pct ~ pickup_lat_region, data = taxi)
-summary(mpickup_lat)
-mpickup_long <- lm(tip_pct ~ pickup_long_region, data = taxi)
-summary(mpickup_long)
-mdropoff_lat <- lm(tip_pct ~ dropoff_lat_region, data = taxi)
-summary(mdropoff_lat)
-mdropoff_long <- lm(tip_pct ~ dropoff_long_region, data = taxi)
-summary(mdropoff_long)
-
-mlat <- lm(tip_pct ~ pickup_lat_region + dropoff_lat_region, data = taxi)
-summary(mlat)
-mlong <- lm(tip_pct ~ pickup_long_region + dropoff_long_region, data = taxi)
-summary(mlong)
+# mpickup_lat <- lm(tip_pct ~ pickup_lat_region, data = taxi)
+# summary(mpickup_lat)
+# mpickup_long <- lm(tip_pct ~ pickup_long_region, data = taxi)
+# summary(mpickup_long)
+# mdropoff_lat <- lm(tip_pct ~ dropoff_lat_region, data = taxi)
+# summary(mdropoff_lat)
+# mdropoff_long <- lm(tip_pct ~ dropoff_long_region, data = taxi)
+# summary(mdropoff_long)
+# 
+# mlat <- lm(tip_pct ~ pickup_lat_region + dropoff_lat_region, data = taxi)
+# summary(mlat)
+# mlong <- lm(tip_pct ~ pickup_long_region + dropoff_long_region, data = taxi)
+# summary(mlong)
 
 mregion <- lm(tip_pct ~ factor(pickup_region) + factor(dropoff_region), 
               data = taxi)
 summary(mregion)
+anova(mregion)
 ```
 
 ```{r, message=FALSE, warning=FALSE, fig.width = 3, fig.height= 3}
@@ -436,6 +510,8 @@ locationPlot(taxi, taxi$tip_pct, lat_type = "dropoff", GRID_RESOLUTION = 30, tit
                "Percentage Tipped by Time of Day", varname = "TipPct")
 ```
 
+Finally, we decided to look at how tipping behavior changes in different regions
+of NYC. 
 
 * Which variables are most important for predicting `tip_pct`. All-subsets 
 regression 
@@ -460,55 +536,111 @@ coef(mbest)
 plot(r1, scale="Cp", main = "Most Important Predictors in Different Size Models")
 ```
 
+To close our analysis of `tip_pct`, we ran an allsubsets regression to
+determine which variables are most important in predicting how much a person 
+tips. The best model contained 6 predictors: `fare_amount`, `tolls_amount`, 
+`trip_distance`, `trip_duration`, `avg_speed`, and `dropoff_region`. When 
+running this regression, everything but `trip_duration` (p-value = 0.116) is 
+highly significant. 
+
+`trip_distance` has the largest effect on `tip_pct`, as the data suggest that a 
+rider would tip 0.414% more on a 1 mile longer trip. This is followed by 
+`tolls_amount` and `fare_amount` both of which we discussed earlier.
+
+However, even in this "best" regression, the $R^2$ value is still only 0.010, 
+meaning that we are only explaining 1% of the variability in `tip_pct`. Thus,
+in the end, we conclude that while we did gain some interesting insights,
+it is very difficult to accurately predict `tip_pct`, partly because there is a
+lot of variability, and partly because of the salience of standard tips like 
+20%. 
+
+So, we decided to approach the problem a slightly different way, by using 
+stepwise logistic regressions to try to predict when riders tip more than 25%, 
+when they tip less than 15%, and when they don't tip at all.
 
 * What affects whether or not people tip more than 25%? (stepwise logistic 
 regression)
 
 ```{r, echo = FALSE}
-taxi$tip25 <- factor(ifelse(taxi$tip_pct >= 25, "Yes", "No"))
-m25all <- glm(tip25 ~ extra + fare_amount + mta_tax + passenger_count + 
-              tolls_amount + trip_distance + trip_duration + avg_speed + 
-              pickup_time + dropoff_time + pickup_region + dropoff_region, 
-              data = taxi, family = binomial)
+taxi$tip25 <- factor(ifelse(taxi$tip_pct > 25, "Yes", "No"))
+m25all <- glm(tip25 ~ extra + fare_amount + passenger_count + tolls_amount + 
+              trip_distance + trip_duration + avg_speed + pickup_time + 
+              dropoff_time + pickup_region + dropoff_region, data = taxi, 
+              family = binomial)
 m25step <- step(m25all, direction = "backward", trace = 0)
 summary(m25step)
 coef(m25step)
 ```
 
-m25best tries to predict whether or not a passenger tips more than
-25% using 5 variables deemed most significant from a backward stepwise 
-regression. `pickup_latitude` has the biggest effect.
+In this case, the coefficients are log odds, but these numbers are easier to 
+understand in terms of probabilities.
+
+```{r}
+exp(coef(m25step)[1]) / (1 + exp(coef(m25step)[1]))
+exp(coef(m25step)[2]) / (1 + exp(coef(m25step)[2]))
+```
 
 
 * What affects whether or not people tip less than 15%? (stepwise logistic 
 regression)
 
 ```{r, echo=FALSE}
-taxi$tip15 <- factor(ifelse(taxi$tip_pct <= 15, "Yes", "No"))
-m15all <- glm(tip15 ~ extra + fare_amount + mta_tax + passenger_count + 
-              tolls_amount + trip_distance + trip_duration + avg_speed + 
-              pickup_time + dropoff_time + pickup_region + dropoff_region, 
-              data = taxi, family = binomial)
+taxi$tip15 <- factor(ifelse(taxi$tip_pct < 15, "Yes", "No"))
+m15all <- glm(tip15 ~ extra + fare_amount + passenger_count + tolls_amount + 
+              trip_distance + trip_duration + avg_speed + pickup_time + 
+              dropoff_time + pickup_region + dropoff_region, data = taxi, 
+              family = binomial)
 m15step <- step(m15all, direction = "backward")
 summary(m15step)
 coef(m15step)
 ```
 
+Again, converting to probabilities:
+
+```{r}
+exp(coef(m15step)[1]) / (1 + exp(coef(m15step)[1]))
+exp(coef(m15step)[2]) / (1 + exp(coef(m15step)[2]))
+```
+
+
 * What affects whether or not people tip at all? (stepwise logistic regression)
 
 ```{r, echo=FALSE}
 taxi$tip0 <- factor(ifelse(taxi$tip_pct == 0, "Yes", "No"))
-m0all <- glm(tip0 ~ extra + fare_amount + mta_tax + passenger_count + 
-              tolls_amount + trip_distance + trip_duration + avg_speed + 
-              pickup_time + dropoff_time + pickup_region + dropoff_region, 
-              data = taxi, family = binomial)
+m0all <- glm(tip0 ~ extra + fare_amount + passenger_count + tolls_amount + 
+             trip_distance + trip_duration + avg_speed + pickup_time + 
+             dropoff_time + pickup_region + dropoff_region, data = taxi, 
+             family = binomial)
 m0step <- step(m0all, direction = "backward")
 summary(m0step)
 coef(m0step)
 ```
 
+Probabilities:
 
-**How do trips change with location and time of day?**
+```{r}
+exp(coef(m0step)[1]) / (1 + exp(coef(m0step)[1]))
+exp(coef(m0step)[2]) / (1 + exp(coef(m0step)[2]))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+**2) How do trips change with location and time of day?**
 
 * What are the most popular pickup and drop off locations in New York? How does 
 this change by time of day? Are the most popular pickup locations also the most 
