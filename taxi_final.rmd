@@ -3,98 +3,17 @@ title: "Taxi Final Report"
 author: "Christoph, Chris, Carol"
 date: "4/30/2017"
 output: html_document
+fontsize: 8pt
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-### Introduction - 2015 Yellow Taxi Trip Data - NYC Open Data
-https://data.cityofnewyork.us/Transportation/2015-Yellow-Taxi-Trip-Data/ba8s-jw6u
-
-"This dataset includes trip records from all trips completed in yellow taxis 
-in NYC from January to June in 2015.  Records include fields capturing pick-up 
-and drop-off dates/times, pick-up and drop-off locations, trip distances, 
-itemized fares, rate types, payment types, and driver-reported passenger counts. 
-The data used in the attached datasets were collected and provided to the NYC 
-Taxi and Limousine Commission (TLC) by technology providers authorized under the 
-Taxicab Passenger Enhancement Program (TPEP). The trip data was not created by 
-the TLC, and TLC makes no representations as to the accuracy of these data." 
-(from NYC Open Data)
-
-This dataset is huge (146,087,462 rows and 5GB), and too big for our computers 
-to work with, so we decided to load in data for 1 day. We chose May 6, for no 
-reason in partiocular, except that it is a non-holiday weekday. This was still
-a huge amount of data however, so we filtered it further by selecting only the 
-rides where passengers paid with a credit card (because these are the only rides
-with tip data, which we are interested in exploring), and then took a random 10%
-of the rides.
-
-## Research Questions
-We are particularly interested in exploring 3 features of this taxi trips 
-dataset: time (`dropoff_datetime` and `pickup_datetime`), location 
-(`dropoff_latitude`, `dropoff_longitude`, `pickup_latitude`, and
-`pickup_longitude`), and payments, specifically tips (`tip_amount`). 
-
-  * How do riders tip?
-    * Standard percentage (ie: always 20%), round to the nearest dollar (ie: 
-    $1.57 tip on a $4.43 bill), whole dollar tip (ie: $2)?
-    * Which variables most affect tipping behavior?
-  * What are the most popular pickup and drop off locations in New York and at 
-    what times are they most popular? 
-    * In addition, to answer this question from a slightly different 
-    perspective, we'll look at which directions are taxis traveling at different 
-    times of the day? 
-
-## Data
-* `avg_speed`: average speed of the taxi during the trip in mph
-* `cent_pickup`: how far the pickup site is from the city center
-* `cent_dropoff`: how far the dropoff site is from the city center
-* `dropoff_datetime`: date and time when meter was disengaged
-* `dropoff_hour`: hour of the day when the meter was disengaged
-* `dropoff_latitude`: latitude where the meter was disengaged
-* `dropoff_longitude`: longitude where the meter was disengaged
-* `dropoff_region`: region where the meter was disenaged (one of 25 regions into 
-                    which we divided NYC)
-* `dropoff_time`: time of day when meter was disengaged (either morning, 
-                  afternoon, evening, or night)
-* `extra`: Miscellaneous extras and surcharges (0 = no charge, 0.5 = $0.50 rush 
-           hour charge, 1 = $1 overnight charge)
-* `fare_amount`: time-and-distance fare calculated by the meter
-* `imp_surcharge`: 
-* `mta_tax`: $0.50 tax on taxi rides   
-* `outbound`: 1 if the ride moves away from downtown Manhattan, 0 otherwise
-* `passenger_count`: number of passengers in the vehicle
-* `payment_type`: how the passenger paid for the trip. Always 1 (credit 
-                  card) in the subset of the data we are analyzing
-* `pickup_datetime`: date and time when meter was engaged 
-* `pickup_hour`: hour of the day when the meter was engaged
-* `pickup_latitude`: latitude where the meter was engaged   
-* `pickup_longitude`: longitude where the meter was engaged   
-* `pickup_region`: region where the meter was enaged (one of 25 regions into 
-                   which we divided NYC)
-* `pickup_time`: time of day when meter was engaged (either morning, afternoon,
-                 evening, or night)
-* `rate_code`: final destination (1 = Standard rate, 2 = JFK, 3 = Newark 4 = 
-               Nassau or Westchester, 5 = Negotiated Fare, 6 = Group Ride)       
-* `store_and_fwd_flag`: whether the trip record was held in vehicle memory 
-                        before sending to the vendor
-* `tip_amount`: tip paid. Note: Only calculated for credit card tips   
-* `tip_pct` - tip as a percentage of total fee (fare + tolls + extra + mta_tax)
-* `tolls_amount`: total amount of all tolls paid in the trip
-* `total_amount`: total amount charged to passengers (fare + tip + tolls + 
-                  extra + mta_tax)
-* `trip_distance`: elapsed trip distance in miles
-* `trip_duration`: length of time, in minutes, that the meter was engaged
-* `vendor_id`: technology vendor that provided the record (1 = Creative Mobile 
-               Technologies, 2 = VeriFone)
-  
-```{r, echo=FALSE}
-taxi <- read.csv("taxi_data.csv", as.is = TRUE)
-```
-
 ```{r, echo = FALSE, meassage = FALSE, warning = FALSE, include = FALSE}
 library(dplyr)
+library(fitdistrplus)
+library(GGally)
 library(ggplot2)
 library(ggmap)
 library(grid)
@@ -104,20 +23,56 @@ library(leaps)
 library(lubridate)
 library(mapproj)
 library(MASS)
+library(nnet)
 library(pander)
+library(readr)
 ```
 
+###Introduction
+This project explores yellow taxi cab data in NYC. The full dataset online includes all trips completed in yellow taxis in NYC from January to June 2015, and records 18 variables described below in the "Data" section. This dataset is huge (146,087,462 rows and 5GB), and too big for our computers to work with, so we decided to load in data for 1 day where payment type was credit card because these were the only rides that recorded tips. We chose May 6, for no reason in particular, except that it is a non-holiday weekday. This one day has 288k observtions, which was still burdensome to work with so we took a random subset of 10% of the rows. This left us with 28,857 rows.
+
+From NYC Open Data (https://data.cityofnewyork.us/Transportation/2015-Yellow-Taxi-Trip-Data/ba8s-jw6u): "This dataset includes trip records from all trips completed in yellow taxis in NYC from January to June in 2015. Records include fields capturing pick-up and drop-off dates/times, pick-up and drop-off locations, trip distances, itemized fares, rate types, payment types, and driver-reported passenger counts. The data used in the attached datasets were collected and provided to the NYC Taxi and Limousine Commission (TLC) by technology providers authorized under the Taxicab Passenger Enhancement Program (TPEP). The trip data was not created by the TLC, and TLC makes no representations as to the accuracy of these data." 
+
+We were particularly interested in exploring 2 features of this taxi trips dataset: tipping behavior and ride availability at different times and locations. First, we will explore what factors predict how much (as a percentage of their total bill) a rider tips. It is standard to tip 20%, which we see in the data, but we wanted to explore exceptions to this norm. We will use a wide variety of variables to try to predict tip percentage. This knowledge could be very helpful to NYC taxi drivers willing to change their driving behavior to get bigger tips. Next, we will examine the most popular pickup and drop off locations in New York and at what times they are most popular, as well as in which direction taxis travel at different times of day. This knowledge would be useful to the taxi cab companies, or even city planners, informing them were more taxis or more public transportation options are needed.
+  
+###Data
+Each row of the dataset corresponds to a taxi ride in NYC on May 5, 2015. Each ride has 18 associated variables:
+`dropoff_datetime`: date and time when meter was disengaged; `dropoff_latitude`: latitude where the meter was disengaged; `dropoff_longitude`: longitude where the meter was disengaged; `extra`: Miscellaneous extras and surcharges (0 = no charge, 0.5 = 50 cent rush hour charge, 1 = 1 dollar overnight charge); `fare_amount`: time-and-distance fare calculated by the meter; `imp_surcharge`: 30 cent improvement charge on all rides; `mta_tax`: 50 cent tax on all rides; `passenger_count`: number of passengers in the vehicle; `payment_type`: how the passenger paid for the trip. Always 1 (credit card) in the subset of the data we are analyzing; `pickup_datetime`: date and time when meter was engaged; `pickup_latitude`: latitude where the meter was engaged; `pickup_longitude`: longitude where the meter was engaged; `rate_code`: final destination (1 = Standard rate, 2 = JFK, 3 = Newark 4 = Nassau or Westchester, 5 = Negotiated Fare, 6 = Group Ride); `store_and_fwd_flag`: whether the trip record was held in vehicle memory before sending to the vendor; `tip_amount`: tip paid. Note: Only calculated for credit card tips; `tolls_amount`: total amount of all tolls paid in the trip; `total_amount`: total amount charged to passengers (fare + tip + tolls + extra + mta_tax); `trip_distance`: elapsed trip distance in miles; `vendor_id`: technology vendor that provided the record (1 = Creative Mobile Technologies, 2 = VeriFone)
+
+We also created several variables including `avg_speed`, `cent_pickup`, `cent_dropoff`, `dropoff_hour`, `dropoff_region`, `dropoff_time`, `outbound`, `pickup_hour`, `pickup_region`, `pickup_time`, `tip_pct`, and `trip_duration`.
+
+```{r, eval=FALSE, echo=FALSE}
+ggpairs(taxi[,c(7, 16, 17, 20, 22, 35)])
+```
+
+We did a decent amount of cleaning the dataset before we started our analysis, to remove outliers and missing values. Everything can be seen in the Code Appendix, but briefly, we only included longitudes and latitudes actually in NYC and removed rides where pickup_longitude/latitude equaled dropoff_longitude/latitude (meaning the trip didn't go anywhere), where trip_distance and/or trip_duration equaled 0, where fare_amount equaled 0, where passenger_count equaled 0, where tip percents were above 100%, and where average speed was above 50 mph. After all the cleaning, we worked with 26,049 rides and 35 variables. 
+				
+```{r, echo=FALSE}
+# library("RSocrata")
+# taxi <- read.socrata("https://data.cityofnewyork.us/resource/2yzn-sicd.json?$where=pickup_datetime between '2015-05-06T00:00:00.000' and '2015-05-07T00:00:00.000'&payment_type=1")
+#write.csv(taxi, "taxi_data_full.csv", row.names = FALSE)
+setwd("~/Yale/Semester 4/STAT 230 Intro Data Analysis/NCAA Final Project_GitHub/ncaa-academics")
+taxi <- read.csv("taxi_data.csv", as.is = TRUE)
+```
 
 ```{r, echo=FALSE}
-# Add imp_surcharge
+###CLEANING
+
+# Create `imp_surcharge`
 taxi$imp_surcharge <- rep(0.3, nrow(taxi))
+```
+
+```{r, echo=FALSE}
+###CLEANING
+
+# Remove 2 observations where `fare_amount` == 0
+taxi <- taxi[taxi$fare_amount > 0,]
 ```
 
 ```{r, echo=FALSE}
 # Create `tip_pct`
 taxi <- taxi %>% mutate(tip_pct = (tip_amount / (total_amount - tip_amount)) * 100)
-
-# Remove observation where tip_pct > 100
+# Remove observation where tip_pct > 100 or = 0
 taxi <- taxi[taxi$tip_pct <= 100,]
 ```
 
@@ -146,7 +101,6 @@ taxi <- taxi %>% filter(pickup_longitude < MAXLONG, pickup_longitude > MINLONG,
                pickup_latitude < MAXLAT, pickup_latitude > MINLAT)
 taxi <- taxi %>% filter(dropoff_longitude < MAXLONG, dropoff_longitude > MINLONG, 
                dropoff_latitude < MAXLAT, dropoff_latitude > MINLAT)
-
 # Remove rows where dropoff = pickup
 taxi <- taxi %>% filter(dropoff_longitude != pickup_longitude, 
               dropoff_latitude != pickup_latitude) 
@@ -168,18 +122,14 @@ taxi$dropoff_region <- as.factor(3 * as.numeric(taxi$dropoff_lat_region) +
 ```{r, echo=FALSE}
 # Create outbound, cent_pickup, and cent_dropoff
 norm <- function(x) {
-sqrt(rowSums(x^2))
+  sqrt(rowSums(x^2))
 }
-
 # Coordinates of Bryant Park taken as Downtown Manhattan
-cent_lat <- 40.753889
-cent_long <- -73.983490 
-
+cent_lat <- 40.753889; cent_long <- -73.983490 
 cent_pickup <- data.frame(x = rep(cent_lat,nrow(taxi)) - taxi$pickup_latitude, 
                           y = rep(cent_long, nrow(taxi)) - taxi$pickup_longitude)
 cent_dropoff <- data.frame(x = rep(cent_lat,nrow(taxi)) - taxi$dropoff_latitude, 
                            y = rep(cent_long, nrow(taxi)) - taxi$dropoff_longitude)
-
 taxi$cent_pickup <- norm(cent_pickup)
 taxi$cent_dropoff <- norm(cent_dropoff)
 taxi$outbound <- as.numeric(norm(cent_dropoff) > norm(cent_pickup))
@@ -209,6 +159,13 @@ taxi$avg_speed <- taxi$trip_distance / (taxi$trip_duration / 60)
 ```
 
 ```{r, echo=FALSE}
+# Remove 0% tip
+taxi0 <- taxi
+taxi <- taxi[taxi$tip_pct > 0,]
+```
+
+```{r, echo=FALSE}
+
 # Produces heat plot of NYC showing average of desired variable for each region. 
   # data: data frame from which data is drawn
   # variable: vector of the variable under consideration
@@ -287,47 +244,22 @@ locationPlot <- function(data, variable, lat_type = "pickup", GRID_RESOLUTION = 
     labs(title = title, x = expression(italic("Longitude") ~ "(degrees)"), y = 
            expression(italic("Latitude") ~ "(degrees)"))
 }
+
 ```
 
-```{r, eval=FALSE, echo=FALSE}
-# plot(taxi[,c(7,15,16,17,19,20,21,30,31)])
-```
+###Analysis 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-**1) What factors predict how much (as a percentage of their total fare) a person tips?**
-
-
-#Cut into short trips and long rides
-
+#### 1) What factors predict how much (as a percent of total fare) a person tips?
 
 * Do people tip more, as a percentage, if their fare is lower?
 
-```{r, echo=FALSE}
+```{r, eval=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+####1) What factors predict how much (as a percentage of their total fare) a person tips?
 ggplot(subset(taxi, total_amount < 50), aes(x = total_amount - tip_amount, y = tip_pct)) + 
   geom_point() + 
   geom_smooth() +
   labs(title = "Percentage Tipped by Total Amount", 
        x = "Total Amount (not including tip) ($)", y = "Percentage Tipped")
-
 mfare <- lm(tip_pct ~ fare_amount, data = taxi)
 summary(mfare)
 ```
@@ -337,664 +269,920 @@ predictor. We hypothesized that people would give larger tips, in percent terms,
 the smaller their fare amount since these tips on small amounts are smaller in 
 absolute terms. For example, it would not be uncommon for someone to give a 40% 
 tip on a 5 dollar fare, because that only amounts to 2 dollars, but a 40% tip on 
-a 30 dollar fare (12 dollars) would be less likely. 
-
-The data do lend some support to this hypothesis, as most of the high percentage 
-tips are given on lower bills, and there is a downward curving pattern to the 
-data points, and the coefficient of `fare_amount` is negative, though small 
-(-0.062), and highly signifcant. 
-
-More interestingly, however, are other patterns that appear in the data.
+a 30 dollar fare (12 dollars) would be less likely. The data do lend support to 
+this hypothesis, as most of the high percentage tips are given on lower bills, 
+and there is a downward curving pattern to the data points, and the coefficient 
+of `fare_amount` is negative, though small (-0.062), and highly signifcant. More 
+interestingly, however, are other patterns that appear in the data.
 
 First, you can see the ubiquitousness of standard tip amounts in the horizantal 
-line of points at 20%, 25%, and 30%. About 25% of riders tip approximately 20%, 
-while another 5% tip 25% and 2% tip 30%. We decided to remove these tip 
-percentages for our further analysis, because the riders tipping these salient 
-amounts are most likely choosing tips regardless of the other variables, and our 
-goal is to explore how these other factors affect `tip_pct`. Further, there is 
-another row of points at 0%. We decided to remove these observations, about 3% 
-of the data, for the same reason, and because these riders could have tipped in 
-cash, which we cannot determine from the data we have.
+line of points at 20%, 25%, and 30%. 35% of riders tip approximately 20%, 
+while another 8% tip 25% and 3% tip 30%. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+standard_tip <- taxi[round(taxi$tip_pct, 1) %in% c(20.0, 25.0, 30.0),]
+standard_pct_plot <- ggplot(subset(standard_tip, total_amount < 50), 
+                            aes(x = total_amount - tip_amount, y = tip_pct)) + 
+  geom_point() +
+  scale_x_continuous(limits = c(5, 40)) +
+  scale_y_continuous(limits = c(0, 80)) +
+  labs(title = "Standard Tip Percentages", y = "Percentage Tipped", x = "")
+```
+
+Moreover, in this plot we also see interesting, downward sloping, convex lines 
+of points. These are due to people giving whole dollar tips or giving a tip so
+that their total bill is a whole number. 23% of riders tip a whole dollar amount
+while 4% have a whole number total amount, most likely due to a "rounding" tip.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+whole_tip <- taxi[taxi$tip_amount %% 1 == 0,]
+whole_num1 <- function(x) {(((x + 1)/x) - 1) * 100}
+whole_num3 <- function(x) {(((x + 3)/x) - 1) * 100}
+whole_num5 <- function(x) {(((x + 5)/x) - 1) * 100}
+whole_tip_plot <- ggplot(whole_tip, aes(total_amount - tip_amount, tip_pct)) +
+  geom_point() +
+  stat_function(fun = whole_num1, aes(color = "1 dollar")) + 
+  stat_function(fun = whole_num3, aes(color = "3 dollars")) + 
+  stat_function(fun = whole_num5, aes(color = "5 dollars")) +
+  scale_color_manual(name = "", values = c("red", "blue", "green")) +
+  theme(legend.position = "none") +
+  scale_x_continuous(limits = c(5, 40)) +
+  scale_y_continuous(limits = c(0, 80)) +
+  labs(title = "Whole Dollar Tips", 
+       x = "Total Amount (not including tip) ($)", y = "Percentage Tipped")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+whole_bill <- taxi[taxi$total_amount %% 1 == 0,]
+whole_num1 <- function(x) {((ceiling(x) + 1)/x - 1) * 100}
+whole_num3 <- function(x) {((ceiling(x) + 3)/x - 1) * 100}
+whole_num5 <- function(x) {((ceiling(x) + 5)/x - 1) * 100}
+whole_bill_plot <- ggplot(subset(whole_bill, total_amount < 50), aes(x = total_amount - tip_amount, y = tip_pct)) +   geom_point() + 
+  stat_function(fun = whole_num1, aes(color = "1 dollar")) + 
+  stat_function(fun = whole_num3, aes(color = "3 dollars")) +
+  stat_function(fun = whole_num5, aes(color = "5 dollars"))  +
+  scale_color_manual(name = "Extra Tip", values = c("red", "blue", "green")) +
+  scale_x_continuous(limits = c(5, 40)) +
+  scale_y_continuous(limits = c(0, 80)) +
+  labs(title = "Whole Dollar Total Amounts", y = "Percentage Tipped", x = "")
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.width=25, fig.height=8}
+grid.arrange(standard_pct_plot, whole_tip_plot, whole_bill_plot, ncol = 3)
+```
+
+The plot on the right shows just the riders who tipped 20%, 25%, or 30%, and the
+two other plots show the riders who tipped a whole dollar amount or used their 
+tip to round their total bill to a whole number. The overlaid lines represent 
+the expected tip amount based on the fare if people were to tip a whole dollar 
+amount or use a rounding tip, and then add 1, 3, or 5 dollars to their tip. As 
+can be seen in the plot they fit the points perfectly, and we can fit the other
+curves of points by adding other constant extras like 2, 4, 6, 7, 8... dollars.
+
+Since these 3 tipping behaviors (standard percent, whole dollar tip, whole 
+dollar bill) are so common, we decided to run a multinomial logistic regression
+to predict when people tip using one of these 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+taxi$const_tip_pct <- rep(NA, nrow(taxi))
+taxi$const_tip_pct <- as.numeric(round(taxi$tip_pct, 1) %in% c(20.0, 25.0, 30.0))
+
+taxi$const_tip <- rep(NA, nrow(taxi))
+taxi$const_tip <- as.numeric(taxi$tip_amount %% 1 == 0)
+
+taxi$round_tip <- rep(NA, nrow(taxi))
+taxi$round_tip <- as.numeric(taxi$total_amount %% 1 == 0)
+```
+
+```{r, eval=FALSE, echo=FALSE}
+table("Standard Pct" = taxi$const_tip_pct, "Whole Tip" = taxi$const_tip)
+table("Standard Pct" = taxi$const_tip_pct, "Round Tip" = taxi$round_tip)
+table("Whole Tip" = taxi$const_tip, "Round Tip" = taxi$round_tip)
+```
+
+```{r, echo = FALSE}
+taxi$tiptype <- rep(NA, nrow(taxi))
+taxi$tiptype[(taxi$const_tip == 1 & taxi$round_tip == 0 & taxi$const_tip_pct == 0)] <- "whole_tip"
+taxi$tiptype[(taxi$const_tip == 0 & taxi$round_tip == 0 & taxi$const_tip_pct == 1)] <- "standard_pct"
+taxi$tiptype[(taxi$const_tip == 0 & taxi$round_tip == 1 & taxi$const_tip_pct == 0)] <- "round_tip"
+taxi$tiptype[(taxi$const_tip == 0 & taxi$round_tip == 0 & taxi$const_tip_pct == 0)] <- "other"
+pander(table(taxi$tiptype))
+```
+
+```{r, eval=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+mlog_none <- multinom(tiptype ~ 1, data = taxi)
+
+mlog_fare <- multinom(tiptype ~ fare_amount, data = taxi)
+summary(mlog_fare)
+anova(mlog_fare, mlog_none)
+
+mlog_duration <- multinom(tiptype ~ trip_duration, data = taxi)
+summary(mlog_duration)
+anova(mlog_duration, mlog_none)
+
+mlog_tipamount <- multinom(tiptype ~ tip_amount, data = taxi)
+summary(mlog_tipamount)
+anova(mlog_tipamount, mlog_none)
+
+mlog_tippct <- multinom(tiptype ~ tip_pct, data = taxi)
+summary(mlog_tippct)
+anova(mlog_tippct, mlog_none)
+
+mlog_passenger <- multinom(tiptype ~ passenger_count, data = taxi)
+summary(mlog_passenger)
+anova(mlog_passenger, mlog_none)
+
+mlog_avgspeed <- multinom(tiptype ~ avg_speed, data = taxi)
+summary(mlog_avgspeed)
+anova(mlog_avgspeed, mlog_none)
+
+mlog_dropofftime <- multinom(tiptype ~ dropoff_time, data = taxi)
+summary(mlog_dropofftime)
+anova(mlog_dropofftime, mlog_none)
+```
+
+As fare, average speed, passenger count and duration increases, people are more 
+likely to use the standard tip percentage, then a whole tip, then a rounding tip
+and then some other behavoir. As tip amount or percent increases, tipping a 
+standard amount is more common, while giving a rounding tip or a whole dollar 
+tip are less common than some other behavoir. In terms of time of day, people 
+are most likely to give a whole or rounding tip at night, and are more likely to
+give a standard percent in the afternoon or evening. 
+
+For the further analysis, we decided to remove these observations because the 
+riders tipping these salient amounts are most likely choosing tips regardless of 
+the other variables, and our goal is to explore how these other factors affect 
+`tip_pct`. We can already explain this tipping behavior, and in fact have a 
+plots that fit the points perfectly. Therefore, it wll be more interesting to 
+focus our analysis on the points we haven't yet explained. Note that we also 
+removed 0% tips, about 3% of the original data, for the same reason, and because 
+these riders could have tipped in cash, which we cannot determine from the data 
+we have.
 
 ```{r, echo=FALSE}
+# Remove standard tip percentages
 taxi2 <- taxi
-taxi2 <- taxi2[round(taxi2$tip_pct) != 0,]
 taxi2 <- taxi2[round(taxi2$tip_pct) != 20,]
 taxi2 <- taxi2[round(taxi2$tip_pct) != 25,]
 taxi2 <- taxi2[round(taxi2$tip_pct) != 30,]
 
-# set.seed(230)
-# taxi2$tip_pct[round(taxi2$tip_pct) == 20] <- 20 + 
-#   rnorm(sum(round(taxi2$tip_pct) == 20))
-# taxi2$tip_pct[round(taxi2$tip_pct) == 25] <- 25 + 
-#   rnorm(sum(round(taxi2$tip_pct) == 25))
-# taxi2$tip_pct[round(taxi2$tip_pct) == 30] <- 30 + 
-#   rnorm(sum(round(taxi2$tip_pct) == 30))
-```
-
-Moreover, in this plot we also see interesting, downward sloping, convex lines 
-of points. These are due to people giving whole dollar tips, as seen in the 
-following plots:
-
-```{r, echo=FALSE}
-rounded <- taxi2[taxi2$tip_amount %% 1 == 0,]
-for(i in 0:5) {
-  whole_num <- function(x) {(((x + i)/x) - 1) * 100}
-  print(ggplot(rounded, aes(total_amount - tip_amount, tip_pct)) +
-    geom_jitter() +
-    stat_function(fun = whole_num) + 
-    labs(title = "Percentage Tipped by Total Amount for Whole Dollar Tips", 
-         x = "Total Amount (not including tip) ($)", y = "Percentage Tipped"))
-}
-```
-
-
-*****QUESTION FOR CHRISTOPH*****
-
-We subsetted the data to only include whole dollar tip amounts, so the points 
-show the `tip_pct` and total bill minus tip for rides with whole dollar tips. 
-The overlaid lines represent who tipped whole dollar amounts (nearly 25% of 
-the original dataset), and the overlaid lines....
-
-```{r}
-# round_up <- taxi2[taxi2$total_amount %% 1 == 0,]
-# for(i in 0:5) {
-#   whole_num <- function(x) {(((ceiling(x) + i) / x) - 1) * 100}
-#   print(ggplot(rounded, aes(total_amount, tip_pct)) +
-#     geom_jitter() +
-#     stat_function(fun = whole_num) + 
-#     labs(title = "Percentage Tipped by Total Amount for Whole Dollar Tips", 
-#          x = "Total Amount (not including tip) ($)", y = "Percentage Tipped"))
-# }
-```
-
-So, we decided to remove these observations as well, for the same reason we 
-decided to remove the standard tip amounts. We can already explain this tipping
-behavior, and in fact have a model that fits the points perfectly. Therefore, it
-wll be more interesting to focus our analysis on the points we haven't yet 
-explained.
-
-```{r, echo=FALSE}
+# Remove whole dollar tips
 taxi3 <- taxi2[taxi2$tip_amount %% 1 != 0,]
+
+# Remove rounding tips
+taxi4 <- taxi3[taxi3$total_amount %% 1 != 0,]
 ```
 
-Now we can continue with our analysis. 
+Now we can continue with our analysis of `tip_pct`. 
 
-```{r, echo=FALSE}
-ggplot(subset(taxi3, total_amount < 50), aes(x = total_amount - tip_amount, y = tip_pct)) + 
+```{r, eval=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(subset(taxi4, total_amount < 50), aes(x = total_amount - tip_amount, y = tip_pct)) + 
   geom_point() + 
   geom_smooth() +
   labs(title = "Percentage Tipped by Total Amount", 
        x = "Total Amount (not including tip) ($)", y = "Percentage Tipped")
 
-mfare2 <- lm(tip_pct ~ fare_amount, data = taxi3)
+mfare2 <- lm(tip_pct ~ fare_amount, data = taxi4)
 summary(mfare2)
 ```
 
-```{r, echo=FALSE}
-mfare3 <- lm(tip_pct ~ fare_amount + I(fare_amount^2), data = taxi2)
+```{r, eval=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+mfare3 <- lm(tip_pct ~ fare_amount + I(fare_amount^2), data = taxi4)
 summary(mfare3)
 ```
 
-After removing these observations, the coefficient on `fare_amount` drops from 
--0.062 to -0.297, and stays highly significant, even with much fewer 
-observations. So we now expect a 1 dollar increase in fare to be associated with 
-a 0.3% smaller tip. Moreover, the $R^2$ of this new model jumps from 0.5% to 
-6.7%. Finally, if we add a squared term for `fare_amount`, since it appears that 
-the regression line plateaus and even increases slightly after 20 dollars, the 
-coefficient drops further to -0.810, the coefficient on `fare_amount` squared is
-significant, and the $R^2$ rises further to 8.4%. In context, this means that 
-tips, percent wise, are highest at low fares, drop slightly as the fare 
-increases for a while, and then rise back up.
+```{r, echo=FALSE, eval=FALSE}
+hist(mfare3$residuals)
+```
 
+```{r, echo=FALSE, eval=FALSE, message=FALSE, warning=FALSE}
+mfare4 <- lm(log(tip_pct) ~ log(fare_amount), data = taxi4)
+summary(mfare4)
+```
+
+```{r, echo=FALSE, eval=FALSE}
+plot(resid(mfare3) ~ fitted(mfare3), pch=16)
+```
+
+After removing these observations, the coefficient on `fare_amount` drops from 
+-0.062 to -0.310, and stays highly significant, even with fewer observations. So 
+we now expect a 1 dollar increase in fare to be associated with a 0.3% smaller 
+tip. Moreover, the $R^2$ of this new model jumps from 0.5% to 6.8%. 
+
+When running this model, we assume the LINE assumptions, which we will now check. 
+
+**Linearity** - the plot appears to have some curvature suggesting that the variables may not be linearly associated. To control for this possible non-linearity we included a squared term for `fare_amount`. In this model, the 
+coefficient drops further to -1.003, the coefficient on `fare_amount` squared is
+0.022 and significant, and the $R^2$ rises further to 10.9%. In context, this means that 
+tips, percent wise, are highest at low fares, drop slightly as the fare 
+increases for a while, and then rise back up. 
+**Indendence** - the obersvations are independent because each point is a different 
+ride. 
+**Normality** - to check for this we plotted a histogram of the residuals from the 
+model. The residuals seem somewhat normally distributed with a few large 
+outliers. We tried running a regression using the log transformed values for 
+`tip_pct` and `fare_amount` just in case. The p-value was again very significant 
+and the coefficient was negative, but the $R^2$ dropped back down to 4.3%
+**Equal Variance** - The plot of the residuals against the fitted values shows that 
+we may be slightly underpredicting for lower values of  y. 
+
+While, we have some concerns about these assumptions, overall the model fits 
+them well enough to continue with our analysis. Addionally, our p values were 
+extremely signifigant and most likely wouldn't be altered by further 
+calculations. 
+
+```{r, eval=FALSE, echo=FALSE, warning=FALSE, message=FALSE, fig.width = 12, fig.height = 5}
+before <- ggplot(subset(taxi, total_amount < 50), aes(x = total_amount - tip_amount, y = tip_pct)) + 
+  geom_point() + 
+  geom_point(data = taxi[taxi$tip_amount %% 1 == 0,], color = "red") +
+  geom_point(data = taxi[round(taxi$tip_pct) %in% c(0, 20, 25, 30),], color = "green") +
+  labs(title = "Percentage Tipped by Total Amount", 
+       x = "Total Amount (not including tip) ($)", y = "Percentage Tipped")
+after <- ggplot(subset(taxi4, total_amount < 50), aes(x = total_amount - tip_amount, y = tip_pct)) + 
+  geom_point() + 
+  geom_smooth() +
+  labs(title = "Percentage Tipped by Total Amount (Without Standard Tips)", 
+       x = "Total Amount (not including tip) ($)", y = "Percentage Tipped")
+grid.arrange(before, after, ncol = 2)
+```
 
 * Do people tip more if the taxi drives more quickly?
 
-```{r, fig.width = 2.5, fig.height= 2}
-ggplot(subset(taxi3, tip_pct <= 50), aes(x = avg_speed, y = tip_pct)) + 
+```{r, eval=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(subset(taxi4, tip_pct <= 50), aes(x = avg_speed, y = tip_pct)) + 
   geom_point() +
   geom_smooth() + 
   labs(title = "Tip % by Avg Speed", x = "Average Speed (mph)", 
        y = "Percentage Tipped")
-```
 
-```{r, echo=FALSE}
-mspeed <- lm(tip_pct ~ avg_speed, data = taxi3)
+mspeed <- lm(tip_pct ~ avg_speed, data = taxi4)
 summary(mspeed)
 ```
 
-Moving on, we next decided to test if our hypothesis that people would tip more 
-the higher the average taxi speed, because people generally don't like waiting 
-in traffic, so if they get to where they are going more quickly, relative to how 
-far they are traveling, they would give a higher tip to thank the driver. 
-However the model gives a very small, not very significant coefficient on 
-`avg_speed` and the scatterplot shows almost no correlation. Perhaps some people
-tip less the faster they go because they feel unsafe manuevering quickly through
-NYC traffic. If this is true, it could offset our hypothesis and result in this
-overall lack of correlation.
+```{r, echo=FALSE, eval=FALSE}
+hist(mspeed$residuals)
+```
 
+```{r, echo=FALSE, eval=FALSE}
+plot(resid(mspeed) ~ fitted(mspeed), pch=16)
+```
+
+Moving on, we decided to test if people would tip more the higher the average 
+taxi speed, because people generally don't like waiting in traffic, so if they 
+get to where they are going more quickly, relative to how far they are 
+traveling, we hypothesized that they would give a higher tip to thank the 
+driver. However the model gives a very small, not very significant coefficient 
+on `avg_speed` and the scatterplot shows almost no correlation. Perhaps some 
+people tip less the faster they go because they feel unsafe manuevering quickly 
+through NYC traffic. If this is true, it could offset our hypothesis and result 
+in this overall lack of correlation.
 
 * Do people tip more if there are more passengers in the car? 
 
-```{r, fig.width = 3, fig.height= 2}
-ggplot(taxi3, aes(x = factor(passenger_count), y = tip_pct)) + 
+```{r, eval=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(taxi4, aes(x = factor(passenger_count), y = tip_pct)) + 
   geom_boxplot() + 
   labs(title = "Tip % by # of Passengers", x = "Number of Passengers", 
        y = "Percentage Tipped")
 ```
 
-```{r, echo=FALSE}
-mpassengers <- lm(tip_pct ~ passenger_count, data = taxi3)
+```{r, eval=FALSE, echo=FALSE}
+mpassengers <- lm(tip_pct ~ passenger_count, data = taxi4)
 summary(mpassengers)
 anova(mpassengers)
 pairwise.t.test(taxi$tip_pct, taxi$passenger_count)
-```
 
-```{r, echo=FALSE}
-mpassengers <- lm(tip_pct ~ passenger_count + I(passenger_count^2), data = taxi3)
+mpassengers <- lm(tip_pct ~ passenger_count + I(passenger_count^2), data = taxi4)
 summary(mpassengers)
 anova(mpassengers)
+```
+
+```{r, echo=FALSE, eval=FALSE}
+hist(mpassengers$residuals)
+```
+
+```{r, echo=FALSE, eval=FALSE}
+plot(resid(mpassengers) ~ fitted(mpassengers), pch=16)
 ```
 
 Here, our hypothesis was that riders would tip more as the number of passengers 
 increased, due to a social pressure exerted from the other passengers to tip 
-more. However, the boxplot shows that all riders tip the same (median of 20%) 
-regardless of how many people were in the car. Further, the regression gives a
-small, negative coefficient on `passenger_count`, and it is not very significant. 
-Finally, the pairwise t-test shows that no two levels of `passenger_count` are 
-different from one another.
-
+more. However, most riders tip the same (median of 20%) regardless of how many 
+people were in the taxi Further, the regression gives a small, negative 
+coefficient on `passenger_count`, and it is not very significant. Finally, the 
+pairwise t-test shows that no two levels of `passenger_count` are different from 
+one another.
 
 * Do people tip more at different times of day?
 
-```{r, echo=FALSE}
-ggplot(taxi[taxi$tip_pct < 50,], aes(x = dropoff_time, y = tip_pct)) + 
+```{r, eval=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(taxi4[taxi4$tip_pct < 50,], aes(x = dropoff_time, y = tip_pct)) + 
   geom_boxplot() + 
   labs(title = "Percentage Tipped by Time of Day", x = "Time of Day", 
        y = "Percentage Tipped")
 ```
 
-```{r, echo=FALSE}
-mdropoff_time <- lm(tip_pct ~ dropoff_time, data = taxi3)
-summary(mdropoff_time)
-anova(mdropoff_time)
-pairwise.t.test(taxi$tip_pct, taxi$dropoff_time)
-
-mpickup_time <- lm(tip_pct ~ pickup_time, data = taxi3)
-summary(mpickup_time)
-anova(mpickup_time)
-pairwise.t.test(taxi$tip_pct, taxi$pickup_time)
-
-mtime <- lm(tip_pct ~ dropoff_time + pickup_time, data = taxi3)
-summary(mtime)
-anova(mpickup_time)
-```
-
-```{r, echo=FALSE}
-ggplot(taxi3, aes(x = pickup_hour, y = tip_pct)) +
+```{r, eval=FALSE, echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(taxi4, aes(x = pickup_hour, y = tip_pct)) +
   geom_jitter() +
   labs(title = "Percentage Tipped by Time of Day", x = "Time of Day",
        y = "Percentage Tipped")
 ```
 
-Next, we looked at how tip giving bahvior changes throughout the day. 
-In terms of `dropoff_time`, the p-values were not significant, but, looking at 
-the pairwise t-test, we see that Night is significantly different from Morning, 
-Afternoon, and Evening at the 0.05 significance level. No other levels are 
-signifcantly different. Thus, since the coefficient on Night from the regression 
-summary is negative (-0.576), we conclude that the data suggest that riders tip 
-less, percent wise, at night (midnight to 5 AM) we see that tips at Night 
-(midnight to 5 AM). This result makes sense because people riding that late are
-most likely tired and more likely to get mad at a driver, and thus tip less (if
-we assume people are worse at controlling their emotions when they are tired.)
+```{r, eval=FALSE, echo=FALSE}
+mdropoff_time <- lm(tip_pct ~ dropoff_time, data = taxi4)
+summary(mdropoff_time)
+anova(mdropoff_time)
+pairwise.t.test(taxi$tip_pct, taxi$dropoff_time)
 
-Note: We get a similar result for `pickup_time`, and for a combined 
-regression with both `pickup_time` and `drop_off` time.
+mpickup_time <- lm(tip_pct ~ pickup_time, data = taxi4)
+summary(mpickup_time)
+anova(mpickup_time)
+pairwise.t.test(taxi$tip_pct, taxi$pickup_time)
 
-* Do people tip more in different areas?
-
-```{r, echo=FALSE}
-# mpickup_lat <- lm(tip_pct ~ pickup_lat_region, data = taxi)
-# summary(mpickup_lat)
-# mpickup_long <- lm(tip_pct ~ pickup_long_region, data = taxi)
-# summary(mpickup_long)
-# mdropoff_lat <- lm(tip_pct ~ dropoff_lat_region, data = taxi)
-# summary(mdropoff_lat)
-# mdropoff_long <- lm(tip_pct ~ dropoff_long_region, data = taxi)
-# summary(mdropoff_long)
-# 
-# mlat <- lm(tip_pct ~ pickup_lat_region + dropoff_lat_region, data = taxi)
-# summary(mlat)
-# mlong <- lm(tip_pct ~ pickup_long_region + dropoff_long_region, data = taxi)
-# summary(mlong)
-
-mpickup_region <- lm(tip_pct ~ factor(pickup_region), data = taxi3)
-summary(mpickup_region)
-anova(mpickup_region)
-
-mdropoff_region <- lm(tip_pct ~ factor(dropoff_region), data = taxi3)
-summary(mdropoff_region)
-anova(mdropoff_region)
+mtime <- lm(tip_pct ~ dropoff_time + pickup_time, data = taxi4)
+summary(mtime)
+anova(mpickup_time)
 ```
 
-```{r}
-pickup_region <- taxi3 %>% group_by(pickup_region) %>%
-  summarize(count = n(), var = mean(tip_pct))
-dropoff_region <- taxi3 %>% group_by(dropoff_region) %>%
-  summarize(count = n(), var = mean(tip_pct))
+```{r, echo=FALSE, eval=FALSE}
+hist(mtime$residuals)
 ```
 
-```{r, message=FALSE, warning=FALSE, fig.width = 3, fig.height= 3}
-locationPlot(taxi3, taxi3$tip_pct, lat_type = "pickup", GRID_RESOLUTION = 3, 
-             title = "Percentage Tipped by Time of Day", varname = "TipPct") 
-            
-locationPlot(taxi3, taxi3$tip_pct, lat_type = "dropoff", GRID_RESOLUTION = 3, 
-             title = "Percentage Tipped by Time of Day", varname = "TipPct")
+```{r, echo=FALSE, eval=FALSE}
+plot(resid(mtime) ~ fitted(mtime), pch=16)
 ```
 
-Finally, we looked at how tipping behavior changes in different regions of NYC. 
-From the regression summary, we can see that tipping is highest in region 7, 
-which is northern New Jersey, but that is due to the fact that only 1 trip 
-dropped off there, and the rider tipped 0%. The higher tips in region 6 
-(Queens), and region 8 (The Bronx) seem more significant however, as the 773 and 
-1472 riders dropped off in those areas tipped about 1% more, and 0.9% less, 
-respectively, on average as compared to region 1 (lower Manhatten) and the rest 
-of NYC (since most regions are not significantly different from region 1). We 
-see the same result when looking at tips based on `pickup_region`.
+Next, we looked at how tip giving bahvior changes throughout the day. In terms 
+of `dropoff_time`, the p-values were not significant, but there is some 
+indidcation that people tip less at night (midnight to 5 AM) than in the 
+morning. This result would make sense because people riding that late are most 
+likely either tired from a long day or work or returning from a night out and 
+thus more likely to get mad at a driver, and tip less (if we assume people are 
+worse at controlling their emotions when they are tired and/or inebriated). 
+Note: We get a similar result for `pickup_time`, and for a combined regression 
+with both `pickup_time` and `drop_off` time.
 
+Note: on all of the above regressions, we checked the LINE assumptions, and 
+concluded that there were satisfied.  
 
-* Which variables are most important for predicting `tip_pct`. All-subsets 
-regression 
+* Which variables are most important for predicting `tip_pct`?
 
-We only incuded a subset of the variables in the all subsets regression. We 
-eliminated some predictors (ie: `vendor_id`, `store_and_fwd_flag`, `rate_code`) 
-because the rider did not know them and they could not have affected `tip_pct`, 
-others (ie: `payment_type`, `mta_tax`, `imp_surcharge`) because they were the 
-same for every ride, others because they were obviously correlated with other 
-predictors or `tip_pct` itself (ie: `tip_amount` with `tip_pct`, `trip_duration` 
-with `trip_distance`, `total_amount` with `fare_amount`, `pickup_time`, 
+Finally, we ran an all-subsets regression only incuding a subset of the 
+variables. We eliminated some predictors (ie: `vendor_id`, `store_and_fwd_flag`, 
+`rate_code`) because the rider did not know them and they could not have 
+affected `tip_pct`, others (ie: `payment_type`, `mta_tax`, `imp_surcharge`) 
+because they were the same for every ride, others because they were obviously 
+correlated with other predictors or `tip_pct` itself and would have violated the 
+independence assumption (ie: `tip_amount` with `tip_pct`, `trip_duration` with 
+`trip_distance`, `total_amount` with `fare_amount`, and `pickup_time`, 
 `pickup_hour`, `pickup_datetime`, `dropoff_hour`, `dropoff_datetime` with 
-`dropoff_time`, and `pickup_region`, `dropoff_latitude`, `dropoff_longitude`, 
-`pickup_latitude`, `pickup_longitude` with `dropoff_region`). That leaves 9
-predictors: `extra`, `fare_amount`, `passenger_count`, `tolls_amount`, 
-`trip_distance`, `avg_speed`, `dropoff_time`, and `outbound`.
+`dropoff_time`). That leaves 9 predictors: `extra`, `fare_amount`, 
+`passenger_count`, `tolls_amount`, `trip_distance`, `avg_speed`, `dropoff_time`, 
+and `outbound`.
 
 ```{r, echo=FALSE}
 r1 = regsubsets(tip_pct ~ extra + fare_amount + passenger_count + tolls_amount + 
-                trip_distance + avg_speed + dropoff_time + 
-                factor(dropoff_region) + outbound, data = taxi3, nvmax = 9)
+                trip_distance + avg_speed + dropoff_time + outbound, data = taxi4)
 r1s <- summary(r1)
-r1s$which
-plot(r1s$rsq, main = "R-squareds of Models with Increasingly More Variables", 
-     ylab = "R-sqaured")
-
 bestwhich <- r1s$which[which.min(r1s$cp),]
 best_vars <- names(bestwhich[bestwhich == TRUE])
 best_vars <- best_vars[-1]
-best_vars
+```
+
+```{r, eval=FALSE, echo=FALSE}
 mbest <- lm(tip_pct ~ extra + fare_amount + tolls_amount + trip_distance + 
             outbound + dropoff_time, data = taxi3)
 summary(mbest)
-coef(mbest)
-plot(r1, scale="Cp", main = "Key Predictors in Different Size Models")
 ```
 
 The best model includes `extra`, `fare_amount`, `tolls_amount`, `trip_distance`, 
-and `outbound`, as well as the Afternoon and Evening levels of `dropoff_time`
-and region 6 of `dropoff_region`. We decided to drop `dropoff_region` however, 
-since only 1 of 9 regions were included. Running this best regression, we get 
-the following results:
+and `outbound`, as well as the Afternoon and Evening levels of `dropoff_time`. 
+Running this "best" regression, we get the following results:
 
-`trip_distance` has the largest effect on `tip_pct`, as the data suggest that a 
-rider would tip 0.414% more on a 1 mile longer trip. This is followed by 
-`tolls_amount` and `fare_amount` both of which we discussed earlier.
+`extra` has the largest effect on `tip_pct`, as the data suggest that a 
+rider would tip 1.9% less if charged 1 dollar more in extra fees. This makes 
+sense because people generally don't want to pay as large of an additional tip 
+on top of the extra amount they're already being charged. `fare_amount` has a 
+similar effect on `tip_pct`, most likely for the same reason, but interestingly, 
+a $1 increase in `tolls_amount` is associated with a 0.7% increase in tip. We 
+believe this is because it's a hastle for drivers to go through tollbooths and 
+riders feel sympathetic so tip more. Finally, people tip more on longer distance 
+trips, which again makes sense if riders build a rapport with thier driver due 
+to the extended length. These are all the significant predictors from the 
+regression. 
 
-However, even in this "best" regression, the $R^2$ value is still only 9%, 
-meaning that we are only explaining 9% of the variability in `tip_pct`. This is
+However, even in this "best" regression, the $R^2$ value is still only 8.4%, 
+meaning that we are only explaining 8.4% of the variability in `tip_pct`. This is
 not bad, but in the end, we conclude that while we did gain some interesting 
 insights, it is very difficult to accurately predict `tip_pct`, partly because 
-there is a lot of variability, and partly because of the salience of standard 
-tips like 20% and whole dollar amounts.
+there is a lot of variability, and partly because of the ubiquitousness of 
+standard tips like 20% and whole dollar tips.
 
-So, we tried one last model to predict tip, using stepwise logistic regressions 
-to predict when riders tip the standard percentages and when they tip in whole
-dollars.
+* Finally, we ran one last regression to determine what affects whether or not 
+people tip at all.
 
-* What affects whether or not people tip 20%?
-
-```{r, echo = FALSE}
-taxi$tip20 <- factor(ifelse(round(taxi$tip_pct) == 20, "Yes", "No"))
-m20all <- glm(tip20 ~ extra + fare_amount + passenger_count + tolls_amount + 
-              trip_distance + avg_speed + dropoff_time + factor(dropoff_region) 
-              + outbound, data = taxi, family = binomial)
-m20step <- step(m20all, direction = "backward", trace = FALSE)
-summary(m20step)
-```
-
-All else equal, riders are more likely to tip 20% in the evening, and less 
-likely in regions 8 and 9.
-
-<!-- All else equal, a 1 dollar increase in fare is associated with a  -->
-<!-- `exp(coef(m25step)[2])`% increase in the odds of tipping more than 25%.  -->
-<!-- Similarly, a 1 dollar increase in tolls and a 1 mph increase in average speed  -->
-<!-- correspond to a `exp(coef(m25step)[3])`% and `exp(coef(m25step)[4])`% increase  -->
-<!-- in the odds of tipping more than 25% respectively. Finally, riders seem to be  -->
-<!-- more likely to tip more than 25% in some regions as well, notably region 15.  -->
-
-
-* What affects whether or not people tip at all?
-
-```{r, echo=FALSE}
-taxi$tip0 <- factor(ifelse(round(taxi$tip_pct) == 0, "Yes", "No"))
+```{r, eval=FALSE, echo=FALSE}
+taxi0$tip0 <- factor(ifelse(round(taxi0$tip_pct) == 0, "Yes", "No"))
 m0all <- glm(tip0 ~ extra + fare_amount + passenger_count + tolls_amount + 
-             trip_distance + avg_speed + dropoff_time + factor(dropoff_region) 
-             + outbound, data = taxi, family = binomial)
+             trip_distance + avg_speed + dropoff_time + outbound, data = taxi0, 
+             family = binomial)
 m0step <- step(m0all, direction = "backward", trace = FALSE)
 summary(m0step)
+
 ```
 
-Finally, looking at when riders don't tip, all else equal, riders are more 
-likely to tip 0% with a higher fare, when there are more passengers in the taxi, 
-at night, and in regions 6, 8, and 9, and are less likely to tip 0% if the trip 
-is longer or they are heading outbound.
-
-<!-- a 1 dollar increase  -->
-<!-- in fare, an increase of 1 passenger, a 1 dollar increase in tolls, a 1 mile  -->
-<!-- increase in distance, and 1 mph increase in average speed are associated with  -->
-<!-- `exp(coef(m0step)[2])`%, `exp(coef(m0step)[3])`%, `exp(coef(m0step)[4])`%,  -->
-<!-- `exp(coef(m0step)[5])`%, `exp(coef(m0step)[6])`% increases in the odds of  -->
-<!-- tipping 0%, respectively. In addition, the data suggest that we should expect a  -->
-<!-- rider at night to be `exp(coef(m0step)[8])`% more likely to tip nothing than a  -->
-<!-- rider at other times of the day. -->
+All else equal, riders are more likely to tip 0% with a higher fare, when there 
+are more passengers in the taxi, at night, or they are heading outbound, and 
+less likely to tip 0% on longer trips. 
 
 
+#### 2) Direction of Taxi Flow and Public Transit 
 
+Taxi rides and subway rides are interchangeable modes of transportation. Routes that taxis most consistently drive may thus indicate routes with sub-optimal public transit connections. In this section, we explore the relationship between public transit routes and taxi rides. We hypothesize that taxis are used as substitutes for public transit rather than compliments i.e. that many taxi rides cover routes also possible through public transit. 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-**2) How do trips change with location and time of day?**
-
-* What are the most popular pickup and drop off locations in New York? How does 
-this change by time of day? Are the most popular pickup locations also the most 
-popular dropoff locations?
+To begin this analysis, we first investigate the direction of flow of taxis within Manhattan. To do this, we first divided Manhattan and the surrounding area into 625 regions. Then, we calculated the average normalized direction vector for all taxis starting within each region. The plot below shows these arrows superimposed over a map of Manhattan. Each arrow begins at the midpoint of the region it represents. The longer the arrow, the more rides starting within a region agree on direction. The color of each arrow indicates number of rides starting with in a region. Arrows representing less than 30 rides were removed from the plot.
 
 ```{r, warning = FALSE, message = FALSE, echo = FALSE, results = 'hide'}
-data <- taxi 
-GRID_RESOLUTION <- 40
-title <-  "Add Title"
-varname <-  "Variable"
-N_LOCATIONS <- 5
-
-# Select all taxi rides whose pickup was within the specified region. Stores 
-# these rides to a new data frame 'pos'
-pos <- filter(data, pickup_longitude < MAXLONG, pickup_longitude > MINLONG, 
-              pickup_latitude < MAXLAT, pickup_latitude > MINLAT) 
-
-# Remove all rows with dropoff longitude or latitude equal to zero
-pos <- filter(pos, dropoff_longitude != 0, dropoff_latitude!= 0) 
-# Remove all rows where pickup and dropoff locations are the same.
-pos <- filter(pos, dropoff_longitude != pickup_longitude, 
-              dropoff_latitude != pickup_latitude) 
-
-pos$lat_region <- cut(pos$pickup_latitude,GRID_RESOLUTION) # cuts latitude into bins
-pos$long_region <- cut(pos$pickup_longitude,GRID_RESOLUTION) # cuts latitude into bins
-
-# Groups data in 'pos' by 'lat_region' and 'long_region' (region on the grid) 
-# Calculates number of rides being picked up in each region ('count') and the 
-# average direction traveled for each taxi rides beginning in each grid (long_dir_avg, 
-# lat_dir_avg)
-grouped <- group_by(pos, lat_region, long_region) %>% summarize(count = n()) 
-
-# Create new data frame 'max' containing the regions with the most pickups
-max <- grouped[order(grouped$count, decreasing =TRUE),][1:N_LOCATIONS,] 
-
-# Create data frame of all taxi rides starting from these regions
-max <- filter(pos, lat_region == max$lat_region & long_region == max$long_region) 
-
-# Groups data by pickup_hour, latitude, and longitude and counts how many rides are in 
-# each group
-grouped_pickup <- group_by(max, pickup_hour, lat_region, long_region) %>% 
-                    summarize(count = n()) 
-
-# Add column identifying rides as "pickup"
-grouped_pickup$type <- rep("pickup", nrow(grouped_pickup)) 
-```
-
-```{r, echo = FALSE,  results = 'hide', warning = FALSE, message = FALSE}
-rm(pos, grouped, max)
-
-# Select all taxi rides whose dropoff was within the specified region. Stores 
-# these rides to a new data frame 'pos'
-pos <- filter(data, dropoff_longitude < MAXLONG, dropoff_longitude > MINLONG, 
-              dropoff_latitude < MAXLAT, dropoff_latitude > MINLAT) 
-
-# Remove all rows with pickup longitude or latitude equal to zero.
-pos <- filter(pos, pickup_longitude != 0, pickup_latitude!= 0) 
-# Remove all rows where pickup and dropoff locations are the same.
-pos <- filter(pos, dropoff_longitude != pickup_longitude, 
-              dropoff_latitude != pickup_latitude) 
-
-pos$lat_region <- cut(pos$dropoff_latitude,GRID_RESOLUTION) # cuts latitude into bins
-pos$long_region <- cut(pos$dropoff_longitude,GRID_RESOLUTION) # cuts longitude into bins
-      
-# Group data in 'pos' by 'lat_region' and 'long_region' (i.e. by region on the 
-# grid). Calculates number of rides being picked up in each region ('count') 
-# and the average direction traveled for each taxi rides beginning in each grid 
-# (long_dir_avg, lat_dir_avg)
-grouped <- group_by(pos, lat_region, long_region) %>% summarize(count = n()) 
-
-# Create new data frame 'max' containing the regions with the most dropoffs
-max <- grouped[order(grouped$count, decreasing =TRUE),][1:N_LOCATIONS,]
-
-# Create data frame of all taxi rides going to these region
-max <- filter(pos, lat_region == max$lat_region & long_region == max$long_region) 
-
-# Groups data by pickup_hour, latitude, and longitude and counts how many rides are in each group
-grouped_dropoff <- group_by(max, pickup_hour, lat_region, long_region) %>% summarize(count = n()) 
-
-# Identifies data as "dropoff"
-grouped_dropoff$type <- rep("dropoff", nrow(grouped_dropoff)) 
-```
-      
-      
-```{r, echo = FALSE,  results = 'hide', warning = FALSE, message = FALSE}
-# Combine data tables "grouped_pickup" and "grouped_dropoff" into  a new data 
-# frame 'dat'
-dat <- bind_rows(ungroup(grouped_pickup), ungroup(grouped_dropoff)) 
-
-# Create data frame of latitudes and longitudes
-grid <- data.frame(latitude = dat$lat_region,longitude = dat$long_region) 
-grid <- unique(grid) # removes duplicates
-
-grid$regioncode <- 1:nrow(grid) # gives each region its own integer code
-
-# Classify rides in 'dat' by region
-dat$region <- rep(NA,nrow(dat))
-for(i in 1: nrow(grid)) {
-  dat$region[(as.character(dat$lat_region) == as.character(grid$latitude[i])) & 
-       (as.character(dat$long_region) == as.character(grid$longitude[i]))] <- i
-} 
-
-dat$region <- as.factor(dat$region)
-```
-
-```{r, echo = FALSE, results = 'hide', warning = FALSE, message = FALSE}
-temp <-  grid$latitude
-temp <- gsub("\\(", "", temp)
-temp <- gsub("\\]", "", temp)
-temp <- strsplit(temp, ",")
-
-# Split region boundaries from 'cut()' into upper and lower latitudes
-temp <- unlist(temp)
-temp <- as.numeric(temp)
-grid$max_lat <- temp[2*1:nrow(grid)] # list of latitude upper bounds
-grid$min_lat <- temp[2*1:nrow(grid)-1] # list of latitude lower bounds
-grid$avg_lat <- 0.5*(grid$max_lat + grid$min_lat) # list of average region latitudes
-    
-temp <-  grid$longitude # stores longitude bounds of regions to 'temp'
-temp <- gsub("\\(", "", temp)
-temp <- gsub("\\]", "", temp)
-temp <- strsplit(temp, ",")
-
-# Split region boundaries from 'cut()' into upper and lower longitudes
-temp <- unlist(temp)
-temp <- as.numeric(temp)
-grid$max_long <- temp[2*1:nrow(grid)] # list of latitude upper bounds
-grid$min_long <- temp[2*1:nrow(grid)-1] # list of latitude lower bounds
-grid$avg_long <- 0.5*(grid$max_long + grid$min_long) # list of average region longitudes
-```
-
-```{r, echo = FALSE, warning = FALSE, message = FALSE}
-timeplot <- ggplot(data = dat, aes(x = pickup_hour, y = count, col = region)) +
-  geom_line(size = 1) +
-  labs(title = "Analysis of 5 Most Popular Pickup and Dropoff Sites", 
-       x = expression(italic("Hour of Day")), 
-       y = expression(italic("Number of Rides"))) + 
-  facet_wrap(~ type, ncol =1)
-```
-
-```{r, echo = FALSE, warning = FALSE, message = FALSE}
-MAXLAT1 <- 40.775
-MINLAT1 <- 40.74
-MAXLONG1 <- -73.965
-MINLONG1<- -73.995
-map <- get_map(location = c(MINLONG1 - 0.01 ,MINLAT1 - 0.01, MAXLONG1 + 0.01, 
-                     MAXLAT1 + 0.01), source = "google", maptype = "roadmap") 
-
-pop_map <- ggmap(map) +
-  labs(x = expression(italic("Longitude")~"(degrees)"),
-       y = expression(italic("Latitude")~"(degrees)")) +
-  geom_label(aes(jitter(avg_long), jitter(avg_lat),label = regioncode), 
-             data = grid, size = 2) + 
-  theme(axis.line = element_blank(), 
-    axis.text.x = element_blank(), 
-    axis.text.y = element_blank(),
-    axis.ticks = element_blank(), 
-    axis.title.x = element_blank(), 
-    axis.title.y = element_blank(),plot.margin=unit(c(0,0,0,0),"mm")) +
-  scale_y_continuous(limits=c(MINLAT1, MAXLAT1)) + 
-  scale_x_continuous(limits = c(MINLONG1, MAXLONG1))
-```
-
-```{r, warning = FALSE, message = FALSE, fig.width = 5, fig.height= 3}
-grid.arrange(timeplot, pop_map, ncol = 2, widths = c(2,1))
-```
-Regions 1-5 are the most popular taxi pickup sites (1 = most popular, 5 = least). 
-egions 6-10 are the most popular dropoff sites. Dropoff sites tend be most 
-active at 7-8 AM. Pickup sites are most active at 8-9 PM. We will next 
-investigate how popular pickup sites rank in terms of dropoff sites and vice 
-versa.
-  
-* Which directions are taxis traveling on average at different times of the day? 
-```{r, warning = FALSE, message = FALSE, echo = FALSE, results = 'hide'}
-# Remove rows with abnormal dropoff longitudes
-rm(pos, grouped)
-MAXLAT <- 40.85
-MINLAT <- 40.675
-MAXLONG <- -73.85
-MINLONG <- -74.1
+rm(grouped)
+MAXLAT <- 40.85; MINLAT <- 40.675; MAXLONG <- -73.85; MINLONG <- -74.1
 SIZEFACTOR  <-  0.015 # Desired Magnitude of Direction Arrows
 GRID_RESOLUTION <- 25
 
-pos$lat_region <- cut(pos$pickup_latitude,GRID_RESOLUTION) # cuts latitude into bins
-pos$long_region <- cut(pos$pickup_longitude,GRID_RESOLUTION) # cuts latitude into bin
+taxi$lat_region <- cut(taxi$pickup_latitude,GRID_RESOLUTION) 
+taxi$long_region <- cut(taxi$pickup_longitude,GRID_RESOLUTION)
 ```
 
 ```{r, echo = FALSE, results = 'hide', warning = FALSE, message = FALSE}
-# Add rows 'lat_dir' and 'long_dir' to the data frame 'pos' which respectively 
-# contain the change in latitude and longitude for each ride.
-pos <- mutate(pos, lat_dir = (dropoff_latitude - pickup_latitude), 
+# Add rows 'lat_dir' and 'long_dir' which respectively contain the change in latitude and longitude for each ride.
+taxi <- mutate(taxi, lat_dir = (dropoff_latitude - pickup_latitude), 
               long_dir = (dropoff_longitude - pickup_longitude)) 
 
-# Create columns 'lat_dir_scaled' and 'long_dir_scaled', which contain the 
-# coordinates of 'lat_dir' and 'long_dir' normalized so that the direction 
-# vector has magnitude equal to 'SIZEFACTOR'
-pos <- mutate(pos, lat_dir_scaled = lat_dir * SIZEFACTOR/sqrt(lat_dir^2 + long_dir^2), 
+# Create columns 'lat_dir_scaled' and 'long_dir_scaled', which contain 'lat_dir' and 'long_dir' normalized to magnitude 'SIZEFACTOR'
+taxi<- mutate(taxi, lat_dir_scaled = lat_dir * SIZEFACTOR/sqrt(lat_dir^2 + long_dir^2), 
               long_dir_scaled = long_dir * SIZEFACTOR /sqrt(lat_dir^2 + long_dir^2)) 
 
 # Note: NaN results for rides where pickup and dropoff locations are equal.
 
-pos$daytime <- rep(NA, nrow(pos))
+taxi$daytime <- rep(NA, nrow(taxi))
 
-# Create new column of pos indicating whether pickup-time was in the morning or evening
-pos$daytime <- ifelse(pos$pickup_hour < 12, "morning", "evening") 
-pos$daytime <- factor(pos$daytime, levels= c("morning","evening"))
+taxi$daytime <- ifelse(taxi$pickup_hour<=14 & taxi$pickup_hour >= 4 , "Morning and Afternoon", "Evening and Night")
+taxi$daytime <- factor(taxi$daytime, levels = c("Morning and Afternoon", "Evening and Night"))
 ```
 
 ```{r,warning = FALSE, message = FALSE, echo = FALSE, results = 'hide'}
-# Groups data in 'pos' by 'lat_region' and 'long_region' (i.e. by region on the 
-# grid). Calculates number of rides being picked up in each region ('count') and 
-# the average direction traveled for each taxi rides beginning in each grid 
-# (long_dir_avg, lat_dir_avg)
-grouped <- group_by(pos, lat_region, long_region, daytime) %>% 
+# Group data by 'lat_region' and 'long_region'. Calculates number of rides being picked up ('count') and the average direction traveled for each region
+grouped <- group_by(taxi, lat_region, long_region, daytime) %>% 
   summarize(lat_dir_avg = mean(lat_dir_scaled, na.rm = TRUE), 
             long_dir_avg = mean(long_dir_scaled, na.rm =TRUE), count = n()) 
 
+# Split latitude region boundaries into upper, lower, and average longitudes
 temp <-  grouped$lat_region 
 temp <- gsub("\\(", "", temp)
 temp <- gsub("\\]", "", temp)
 temp <- strsplit(temp, ",")
 temp <- unlist(temp)
 temp <- as.numeric(temp)
-grouped$max_lat <- temp[2*1:nrow(grouped)] # list of latitude upper bounds
-grouped$min_lat <- temp[2*1:nrow(grouped)-1] # list of latitude lower bounds
-grouped$avg_lat <- 0.5*(grouped$max_lat + grouped$min_lat) # list of average latitude
-    
+grouped$max_lat <- temp[2*1:nrow(grouped)]
+grouped$min_lat <- temp[2*1:nrow(grouped)-1] 
+grouped$avg_lat <- 0.5*(grouped$max_lat + grouped$min_lat)
+
+# Split longitude region boundaries into upper, lower, and average longitudes
 temp <-  grouped$long_region
 temp <- gsub("\\(", "", temp)
 temp <- gsub("\\]", "", temp)
 temp <- strsplit(temp, ",")
 temp <- unlist(temp)
 temp <- as.numeric(temp)
-grouped$max_long <- temp[2*1:nrow(grouped)] # list of latitude upper bounds
-grouped$min_long <- temp[2*1:nrow(grouped)-1] # list of latitude lower bounds
-grouped$avg_long <- 0.5*(grouped$max_long + grouped$min_long) # list of average longitude
+grouped$max_long <- temp[2*1:nrow(grouped)] 
+grouped$min_long <- temp[2*1:nrow(grouped)-1] 
+grouped$avg_long <- 0.5*(grouped$max_long + grouped$min_long)
 ```
 
 ```{r, warning = FALSE, message = FALSE, echo = FALSE, results = 'hide'}
-heatplot <- ggplot(data = grouped, aes(xmin = min_long, xmax = max_long, 
-                   ymin = min_lat, ymax = max_lat, fill = count)) + 
+# creates heat plot with colors reprenting number of pickups in the region
+heatplot <- ggplot(data = grouped, aes(xmin = min_long, xmax = max_long, ymin = min_lat, ymax = max_lat, fill = count)) + 
   geom_rect() + 
-  scale_fill_gradientn("Number of Pickups", 
-                       colors = c("purple","blue","green","yellow", "orange", "red")) + 
+  scale_fill_gradientn("Number of Pickups", colors = c("purple","blue","green","yellow", "orange", "red")) + 
   facet_wrap(~daytime)
 ```
 
 ```{r, warning = FALSE, message = FALSE, echo=FALSE, fig.width = 9, fig.height= 3}
-MAXLAT1 <- 40.8
-MINLAT1 <- 40.7
-MAXLONG1 <- -73.92
-MINLONG1<- -74.03
+MAXLAT1 <- 40.8; MINLAT1 <- 40.7; MAXLONG1 <- -73.92; MINLONG1<- -74.03
 MINRIDES <-  30 # minimum number of rides for arrow to show up
 
-map <- get_map(location = c(MINLONG, MINLAT, MAXLONG, MAXLAT), source = "stamen", 
-               maptype = "watercolor", color = "bw")
+#loads in google map of Manhattan
+map <- get_googlemap(center = c(lon = cent_long, lat = cent_lat), zoom = 12, maptype = "terrain", style = 'feature:all|element:labels|visibility:off')
 ```
 
-```{r, warning = FALSE, message = FALSE, fig.width = 5.5, fig.height= 3}
-ggmap(map) + geom_segment(aes(x = avg_long, xend = (avg_long + long_dir_avg), y = avg_lat, yend = (avg_lat + lat_dir_avg), color = count), data = filter(grouped, count > MINRIDES), arrow = arrow(length=unit(0.15, "cm"), ends="first", type = "closed"), size = 0.9) + labs(title = "Direction of Motion by Region", x = expression(italic("Longitude")~"(degrees)"), y = expression(italic("Latitude")~"(degrees)")) + scale_color_gradientn("Number of Rides", colors = c("purple","blue","green","yellow","orange","red")) + facet_wrap( ~ daytime) + scale_y_continuous(limits=c(MINLAT1, MAXLAT1)) + scale_x_continuous(limits = c(MINLONG1, MAXLONG1))
-```
-There is a general outward flux of taxis. Taxi rides starting farther from 
-center tend to agree more on the outward direction (longer arrows). We will 
-facet into more time catagories. We might investigate where outward directed 
-taxis are going
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.width = 8, fig.height= 5}
+#plots direction of motion by region
+motion_plot <- ggmap(map) + 
+  geom_segment(aes(x = (avg_long + long_dir_avg), xend = avg_long, y = (avg_lat + lat_dir_avg), yend = avg_lat, color = count), data = filter(grouped, count > MINRIDES), arrow = arrow(length=unit(0.15, "cm"), ends="first", type = "closed"), size = 1.3) + 
+  labs(title = "Direction of Motion by Region", x = expression(italic("Longitude")~"(degrees)"), y = expression(italic("Latitude")~"(degrees)"))+
+  scale_color_gradientn("Number of Rides", colors = c("blue","green","yellow","orange","red")) +
+  scale_y_continuous(limits=c(MINLAT1, MAXLAT1)) +
+  scale_x_continuous(limits = c(MINLONG1, MAXLONG1)) + 
+  facet_wrap( ~ daytime) 
 
-* What is the average speed of taxis depending on the time of day and region of 
-the city?
-To do this, we would create a heat map of Manhattan where different colors 
-indicate different travel speeds of taxis.
+motion_plot
+```
+
+```{r, fig.height=8, fig.width=8, eval = FALSE, echo = FALSE}
+ggmap(map) + 
+  geom_segment(aes(x = (avg_long + long_dir_avg), xend = avg_long, y = (avg_lat + lat_dir_avg), yend = avg_lat, color = daytime), data = filter(grouped, count > MINRIDES), arrow = arrow(length=unit(0.15, "cm"), ends="first", type = "closed"), size = 0.9) +
+  labs(title = "Direction of Motion by Region", x = expression(italic("Longitude")~"(degrees)"), y = expression(italic("Latitude")~"(degrees)")) +
+  scale_y_continuous(limits=c(MINLAT1, MAXLAT1)) +
+  scale_x_continuous(limits = c(MINLONG1, MAXLONG1))
+```
+
+As can be seen in the plot, the largest number of taxi pickups during both the morning & afternoon (between 4am and 2pm, inclusive) and the evening & night(between 3 pm and 3am, inclusive) occur in central Manhattan, around Times Square/Grand Central Station. The arrows in this region are short, which suggests that rides starting in this region go equally in all directions. On the other hand, taxis starting around the periphery of the city tend to have a fairly uniform inward direction of motion. This makes sense since Manhattan is an island and therefore outward motion along the periphery is not possible (assuming taxis stay in Manhattan). 
+
+When comparing the above plot to a subway map of NYC (see below), it appears that regions around the periphery with higher number of pickups are those with worse Subway connections to central Manhattan. For instance, in both at both times of day a large number of people taxi from the southwest edge of Manhattan toward central Manhattan (as shown by the green-yellow arrows on the plot above). This may be explained by the poor subway connection along this route.
+
+```{r echo=FALSE, out.height= '50%'}
+knitr::include_graphics('NYC_Subway_Map.jpg')
+```
+
+```{r, echo = FALSE, eval = FALSE}
+# proportion of taxis heading away from downtown
+sum(taxi$outbound)/nrow(taxi)
+```
+
+```{r, echo = FALSE, eval = FALSE}
+plot(jitter(lat_dir_scaled, factor =1000) ~ jitter(long_dir_scaled, factor = 1000), data = taxi, col = rgb(0,0,0, 0.01), pch =16, asp = 1)
+points(x = mean(taxi$long_dir_scaled), y = mean(taxi$lat_dir_scaled), col = "red", pch = 16, cex = 3)
+```
+
+```{r, echo = FALSE}
+# calculate direction angle of a vector
+toPolar <- function(x,y) {
+  angle <- atan(y/x)*180/pi
+  if (x>0 & y<0) {
+    angle <-  angle + 360}
+  if (x<0 & y < 0) {
+    angle <-  angle + 180}
+  if (x<0 & y > 0) {
+    angle <- angle + 180}
+  
+  angle
+}
+
+x <-  taxi$long_dir_scaled
+y <- taxi$lat_dir_scaled
+
+#cacluclates direction angle of each taxi ride
+taxi$angle <- rep(NA,nrow(taxi))
+for (i in 1:nrow(taxi)) {
+  taxi$angle[i] <- toPolar(x[i],y[i]) 
+}
+```
+
+```{r, eval = FALSE, echo = FALSE}
+ggplot(data = taxi, aes(x = angle)) + geom_histogram()
+```
+
+```{r, fig.height=15, fig.width=15, echo = FALSE}
+#colnames(taxi)
+#plot(taxi[,c(16,17,19,20,31, 32,33,34, 35, 36)])
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, results = FALSE}
+#Source "https://data.ny.gov/Transportation/NYC-Transit-Subway-Entrance-And-Exit-Data/i9wp-a4ja/data"
+# loads in coordinates of NCY subway entrances
+subway <- read_csv("~/Yale/Semester 4/STAT 230 Intro Data Analysis/NCAA Final Project_GitHub/ncaa-academics/NYC_Transit_Subway_Entrance_And_Exit_Data.csv")
+subway <- filter(subway, Entry == "YES")
+subway <- subway[,c(29,30)]
+colnames(subway) <- c("Ent_lat", "Ent_long")
+
+```
+
+
+```{r, echo = FALSE}
+# calculate distance between pickup site and nearest subway entrance for each taxi ride
+taxi$station_dist <- rep(NA, nrow(taxi))
+for (i in 1:nrow(taxi)) {
+taxi$station_dist[i] <- min(norm(data.frame(x = subway[,"Ent_lat"]-rep(taxi$pickup_latitude[i], nrow(subway)), y = subway[,"Ent_long"]-rep(taxi$pickup_longitude[i], nrow(subway)))))
+}
+
+# convert distance from degrees to meters
+convert <- 40075/360*1000 
+taxi$station_dist <- taxi$station_dist*convert
+```
+
+```{r, echo = FALSE, results = FALSE}
+# randomly generate positions in Manhattan and find distance to nearest subway station
+set.seed(230)
+MINLAT2  <-  40.71
+MAXLAT2 <-  40.760
+MINLONG2  <-  -74.01
+MAXLONG2 <-  -73.975
+MINRIDES  <-  30
+rand_lat <- runif(10000, min = MINLAT2, max = MAXLAT2)
+rand_long <- runif(10000, min = MINLONG2, max = MAXLONG2)
+rand_pos <- data.frame(pickup_latitude = rand_lat, pickup_longitude = rand_long)
+
+rand_pos$station_dist <- rep(NA, nrow(rand_pos))
+for (i in 1:nrow(rand_pos)) {
+rand_pos$station_dist[i] <- min(norm(data.frame(x = subway[,"Ent_lat"]-rep(rand_pos$pickup_latitude[i], nrow(subway)), y = subway[,"Ent_long"]-rep(rand_pos$pickup_longitude[i], nrow(subway)))))
+}
+rand_pos$station_dist <- rand_pos$station_dist*convert
+```
+
+To further investigate the relationship between taxi rides and public transit we investigated how far the pickup locations of the taxi rides were from subway stations. To do this, we downloaded the GPS coordinates of all subway entrances in NCY  from New York State government website (source:  https://data.ny.gov/Transportation/NYC-Transit-Subway-Entrance-And-Exit-Data/i9wp-a4ja/data). For taxi ride, we then calculated the straight-line distance between pickup location and the nearest subway station.
+
+```{r, echo = FALSE, results = 'hide'}
+# fit maximum likelihood estimated log-normal distributions to the two distance distributions
+dist1 <- fitdist(taxi$station_dist[taxi$station_dist < 1500], "lnorm")
+mean1 <- summary(dist1)$estimate[1]
+sd1 <- summary(dist1)$estimate[2]
+dist2 <- fitdist(rand_pos$station_dist, "lnorm")
+mean2 <- summary(dist2)$estimate[1]
+sd2 <- summary(dist2)$estimate[2]
+dist3 <-  fitdist(c(rand_pos$station_dist,taxi$station_dist[taxi$station_dist < 1500]), "lnorm")
+mean3 <- summary(dist3)$estimate[1]
+sd3 <- summary(dist3)$estimate[2]
+
+L1 <- logLik(dist1)
+L2 <- logLik(dist2)
+L3 <- logLik(dist3)
+lambda <-  2*(L1 +L2 - L3)
+
+f <- function(x) dchisq(x,2)
+p_value <- integrate(f, lower = lambda, upper = Inf)
+p_value
+```
+
+The plot below shows a histogram of straight-line distances between pickup site and nearest subway station (red).  Shown in blue is the sampling distribution for randomly generated coordinates in Manhattan. In the Taxi histogram, there was originally a cluster of data points at distance 2.5 km, however we removed these points  for this analysis because we assumed they corresponded to pickup locations outside of Manhattan (our region of interest). 
+
+If taxi pickup locations were independent of station locations, we would expect the red and the blue histograms be from the same distribution. To test whether the two samples are from the same distribution, we fitted the maximum-likelihood estimated (MLE) lognormal distributions to each sample (solid lines in plot below). Lognormal distributions were chosen since the histograms show clear right-skew and distance must always be positive. We then used a likelihood ratio test to test whether the two samples are from the same distribution. First, we calculated the likelihood ratio using $\Lambda = 2(\log L(a) + \log L(b) - \ L(a\cup b))$, where $L(a)$ is the likelihood of the MLE distribution for taxi rides, $L(b)$ is the likelihood of the MLE distribution for random positions, and $\ L(a\cup b)$ is the likelihood of the MLE distribution of both samples combined. We then calculated the probability of the two sample coming from the same distribution by integrating the chi squared distribution with two degrees of freedom (since two parameters were estimated per distribution) from $\Lambda$ to $\infty$. The p-value is $5 \cdot10^{-268}$, which is below the significance level of 5% used in this analysis. This confirms that there are significant differences between the two distributions.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height = 5, fig.width = 7}
+# histogram of distance distributions with superimposed MLE-estimated distributions
+station_hist <- ggplot() + 
+  geom_histogram(data = taxi, aes(x = station_dist, y =..density.., fill = "Taxi"), alpha  = 0.5, col = "black") + 
+  geom_histogram(data = rand_pos, aes(x = station_dist, y = ..density..,  fill = "Random"), alpha = 0.4, col = "black")+
+  labs(title = " Distance between Pickup-Site and Nearest Subway Entrance ", x = expression(italic("Distance to Nearest Subway Entrance")~"(m)"), y = expression(italic("Density"))) +
+  scale_x_continuous(limits = c(0, 1000)) + geom_line(aes(x = 1:1500, y =dlnorm(1:1500, mean1, sd1), color = "MLE Dist Taxi"), size = 1) + geom_line(aes(x = 1:1500, y =dlnorm(1:1500, mean2, sd2), color = "MLE Dist Random"), size = 1) + scale_fill_manual(values = c("Random" = "blue","Taxi" = "red"))  + theme(legend.title=element_blank()) + scale_color_manual(values = c("MLE Dist Taxi" = "red", "MLE Dist Random" = "blue"))
+station_hist
+
+#Note several outliers at 2500 m for Taxi 
+```
+
+```{r, echo = FALSE, results = 'hide', eval = FALSE}
+plot(log(taxi$trip_distance) ~ log(taxi$station_dist))
+
+# test assumption for t-test
+var(taxi$trip_distance[taxi$station_dist<=100])
+var(taxi$trip_distance[taxi$station_dist > 100 & taxi$station_dist <1500 ])
+hist(taxi$trip_distance[taxi$station_dist<=100])
+hist(taxi$trip_distance[taxi$station_dist > 100 & taxi$station_dist <1500 ])
+t.test(taxi$trip_distance[taxi$station_dist<=100], (taxi$trip_distance[taxi$station_dist > 100 & taxi$station_dist <1500 ]))
+t.test(log(taxi$trip_distance[taxi$station_dist<=100]), log(taxi$trip_distance[taxi$station_dist > 100 & taxi$station_dist <1500 ]))
+
+ggplot() + geom_histogram(data = taxi[taxi$station_dist<=100,], aes(trip_distance, y = ..density..)) + geom_histogram(data = taxi[taxi$station_dist > 100 & taxi$station_dist <1500,], aes(trip_distance, y = ..density..), fill = "red", alpha = 0.2)
+
+mod <- lm(trip_distance~station_dist, data = taxi[taxi$station_dist < 1500,])
+summary(mod)
+```
+
+From the above plot, the histogram for `taxi` differs from the `random` one primarily at low values of distance, where there are more taxi pickups than would be expected from random positioning. At first, this seems counterintuitive as it suggests that people are more likely to call a taxi when closer to a subway station. One possible explanation for this, however, is that people use taxis to supplement the last leg of a journey that cannot be done by subway. If this were the case, we would expect rides beginning near subways to be shorter than rides beginning far away.
+
+To test this, we split that data into two groups: taxi closer than 100 m to a subway station and taxi rides farther than 100 m to a subway station. We then performed a t-test on the 'trip_distance' of these two groups. The resulting p-value is 0.75, suggesting that there is no difference between the two means; however, histograms of  `trip_distance`  for each group suggest that the normality assumption is violated. To fix this, we did a t-test on log(`trip_distance`), realizing that we are now testing for differences in geometric means rather than arithmetic means. The p-value of 0.08 still suggests that, however, the differences in the means are not significant (at the 5% significance level).
+
+The t-test shows that there is no significant difference in ride length for people closer to subways. We therefore reject the hypothesis that people use taxi rides to complement subway travels. Instead, it seems more likely that people gravitate toward subway stops when looking for taxis.
+
+**What are the most popular taxi pickup and dropoff sites?**
+
+The fact that so many taxi pickups occur right next to subway stops suggests that people do not view the subway as an alternative to taking the taxi. This alludes to potential deficiencies in the subway system. Subway deficiencies are likely to be greatest in regions with the most taxi pickup and dropoffs. As a final part our project, we thus investigate which pickup/dropoff sites within NYC are the most popular.
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE, results = 'hide'}
+
+GRID_RESOLUTION <- 40
+N_LOCATIONS <- 5
+
+taxi$lat_region <- cut(taxi$pickup_latitude, GRID_RESOLUTION) 
+taxi$long_region <- cut(taxi$pickup_longitude, GRID_RESOLUTION)
+
+# Groups data by geographic region and calculates number of rides picked up and the average direction traveled for each ride beginning in each grid
+grouped <- group_by(taxi, lat_region, long_region) %>% 
+  summarize(count = n())
+
+# Create new data frame 'max' containing the regions with the most pickups
+max <- grouped[order(grouped$count, decreasing =TRUE),][1:N_LOCATIONS,]
+max <- filter(taxi, lat_region == max$lat_region & long_region == max$long_region)
+
+# Groups data by hour, latitude, longitude and count number rides in each group
+grouped_pickup <- group_by(max, pickup_hour, lat_region, long_region) %>% summarize(count = n())
+
+# Add column identifying rides as "pickup"
+grouped_pickup$type <- rep("pickup", nrow(grouped_pickup))
+```
+
+```{r, echo = FALSE,  results = 'hide', warning = FALSE, message = FALSE}
+taxi$lat_region <- cut(taxi$dropoff_latitude, GRID_RESOLUTION)
+taxi$long_region <- cut(taxi$dropoff_longitude, GRID_RESOLUTION)
+
+grouped <- group_by(taxi, lat_region, long_region) %>% 
+  summarize(count = n())
+
+# Create new data frame 'max' containing the regions with the most dropoffs
+max <- grouped[order(grouped$count, decreasing =TRUE),][1:N_LOCATIONS,]
+
+# Creates data frame of all taxi rides going to these region
+max <- filter(taxi, lat_region == max$lat_region & long_region == max$long_region)
+
+# Groups data by pickup_hour, latitude, and longitude and counts how many rides are in each group
+grouped_dropoff <- group_by(max, pickup_hour, lat_region, long_region) %>% 
+  summarize(count = n())
+
+# Identifies data as "dropoff"
+grouped_dropoff$type <- rep("dropoff", nrow(grouped_dropoff))
+```
+
+```{r, echo = FALSE,  results = 'hide', warning = FALSE, message = FALSE}
+# Combine data tables grouped_pickup, grouped_dropoff" into dat
+dat <- bind_rows(ungroup(grouped_pickup), ungroup(grouped_dropoff))
+
+# Create data frame of latitudes and longitudes, without duplicates
+grid <- data.frame(latitude = dat$lat_region, longitude = dat$long_region)
+grid <- unique(grid)
+
+# Classify rides in dat by region
+grid$regioncode <- 1:nrow(grid)
+dat$region <- rep(NA, nrow(dat))
+for(i in 1: nrow(grid)) {
+  dat$region[(as.character(dat$lat_region) == as.character(grid$latitude[i])) &
+       (as.character(dat$long_region) == as.character(grid$longitude[i]))] <- i
+}
+dat$region <- factor(dat$region)
+dat$type <- factor(dat$type, levels = c("pickup", "dropoff"))
+```
+
+```{r, echo = FALSE, results = 'hide', warning = FALSE, message = FALSE}
+# Split region boundaries into upper, lower, and average latitudes
+temp <-  grid$latitude
+temp <- gsub("\\(", "", temp)
+temp <- gsub("\\]", "", temp)
+temp <- strsplit(temp, ",")
+temp <- unlist(temp)
+temp <- as.numeric(temp)
+
+grid$max_lat <- temp[2 * 1:nrow(grid)]
+grid$min_lat <- temp[2 * 1:nrow(grid) - 1]
+grid$avg_lat <- 0.5 * (grid$max_lat + grid$min_lat)
+
+# Split region boundaries into upper, lower, and average longitudes
+temp <-  grid$longitude
+temp <- gsub("\\(", "", temp)
+temp <- gsub("\\]", "", temp)
+temp <- strsplit(temp, ",")
+temp <- unlist(temp)
+temp <- as.numeric(temp)
+
+grid$max_long <- temp[2 * 1:nrow(grid)] 
+grid$min_long <- temp[2 * 1:nrow(grid)-1]
+grid$avg_long <- 0.5 * (grid$max_long + grid$min_long)
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# create line graph of number of pickup/dropoffs per hour at the 5 most popular sites
+timeplot <- ggplot(data = dat, aes(x = pickup_hour, y = count, col = region)) +
+  geom_line(size = 1) +
+  labs(title = "5 Most Popular Pickup and Dropoff Sites",
+       x = expression(italic("Hour of Day")),
+       y = expression(italic("Number of Rides"))) +
+  facet_wrap(~ type, ncol =1)
+  grid$regioncode <- factor(grid$regioncode, levels = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10"))
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#Plots location of most popular pickup and dropoff sites
+MAXLAT1 <- 40.775; MINLAT1 <- 40.74; MAXLONG1 <- -73.965; MINLONG1<- -74.0#73.995
+map <- get_map(location = c(MINLONG1 - 0.01 ,MINLAT1 - 0.01, MAXLONG1 + 0.01, MAXLAT1 + 0.01), source = "google", maptype = "roadmap")
+
+pop_map <- ggmap(map) +
+  labs(x = expression(italic("Longitude") ~ "(degrees)"),
+       y = expression(italic("Latitude") ~ "(degrees)")) +
+  geom_label(aes(jitter(avg_long), jitter(avg_lat),label = regioncode, fill = regioncode), data = grid, size = 3, label.padding = unit(0.1, "lines")) +
+  theme(axis.line = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),plot.margin=unit(c(0,0,0,0),"mm")) +
+  scale_y_continuous(limits=c(MINLAT1, MAXLAT1)) +
+  scale_x_continuous(limits = c(MINLONG1, MAXLONG1))+
+  theme(legend.position="none")
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.width = 8, fig.height= 4}
+grid.arrange(timeplot, pop_map, ncol = 2, widths = c(2,1))
+```
+
+The map above (right) shows the most popular pickup and dropoff regions in Manhattan. Regions 1-5 are the most popular taxi pickup sites (1 = most popular, 5 = least) and regions 6-10 are the most popular dropoff sites (6 = most popular, 10 = least popular). Both the most popular pickup and dropoff site was Penn Station (region 1,6). This suggests that Penn Station is the location in NYC where public transportation is most deficient relative to travel demand. Thus, if a new subway line were to be built, it should probably connect with Penn Station. Also included in the most popular pickup/dropoff sites are is Grand Central Station (regions 2,4, 10) and Park Avenue, near Trup Tower (regions 7,5). All of the most popular pickup and dropoff regions are located in central Manhattan, suggesting that this is the area where improved public transit is most important.
+
+The left part of the figure above shows how the number of pickups/drop-offs changes at each location with time of day. While the number of pickups/dropoffs stays fairly constant throughout the day, there appear to be slightly more pickups and droppoffs in the mornings (around 7am) and evenings (around 8pm)/While speculative, this may be due people commuting to work. There are slightly more pickups and droppoffs in the mornings (around 7am) and evenings (around 8pm), which may be from people commuting to work. This is particularly noticeable at for dropoffs around 7am. These are the times where subways need to be running most frequently.
+
+
+### Conclusion
+
+The taxi industry is shifting dramatically with companies such as Uber and Lyft starting to dominate the transportation industry. We could've really benefited from incorporating data from these companies into our final analysis. Further exploration should compare the different destinations, passenger counts, and distances that Lyft and Uber take their passengers as compared to taxis. It is important to note that Lyft and Uber don't allow passengers to tip, so comparing the total fare amount is important in this case, especially in trying to predict total earnings of drivers. Our project explores both tipping tendencies and direction of taxi flow and public transit.
+ 
+The reliance on tipping separates taxicabs from other transportation industries. Our analysis is useful for taxi drivers in determining the best scenario for earning a higher tip. First, generally, in terms of tip percentage, we've found most people tip the standard 20%, 35% of riders tip approximately 20%, while another 8% tip 25% and 3% tip 30%. However, there are also many people who tip whole dollar amounts or use their tips to round their total to a whole dollar amount: 23% of riders tip a whole dollar amount while 4% have a whole number total amount, most likely due to a "rounding" tip. The frequency of these behaviors is, however, altered by different variables.
+ 
+People do not appear more to tip more if there are more passengers in the car, however, although the p-values were not significant, there was some indication that people tip less at night (midnight to 5 AM) than in the morning. Finally, we found that riders are more likely to tip 0% with a higher fare, at night or they are heading outbound, and less likely to tip 0% on longer trips. Although our LINE assumptions were satisfied to a certain degree, perhaps being able to utilize the full dataset would've allowed us to more fully satisfy these assumptions.
+ 
+In order to continue to explore factors affecting tip, further analysis should compare different days of the year. For example, we might predict that people would tip more around the holiday times, or during the summer months where there are possibly more tourists.
+
+In the second part of our analysis we investigated the relationship between public transportation and taxi rides. To do this, we added a dataset `subway` containing the the GPS coordinates of all subway entrances in NYC. Using this dataset, we found that taxi ride pickup locations are significantly closer to subway stations than would be expected if they were randomly distributed throughout Manhattan. Furthermore, the mean distances traveled are the same for taxis starting near subway stations and those starting farther from subway stations. People thus do now view the subway as a substitute for taxi travel, suggesting deficiencies in the subway system. By analyzing the most popular pickup and dropoff locations in Manhattan, we found that these subway deficiencies are greatest in Central Manhattan, particularly near Penn Station and Grand Central. New subway lines being constructed should ideally connect these regions.
+
+To strengthen these conclusions, the actual routes traveled by taxis could be analyzed in more detail. For example, the taxi travel time for a given route could have been compared to the estimated time travel time using public transportation. It could then be tested whether taxi rides occur more frequently along routes with greater time difference the two modes of transportation. Similarly, the number of stopovers required to complete a taxi route with public transportation could be investigated in more detail. We expect routes with more stopovers to be frequented more by taxis. This analysis was beyond the scope of the experiment, however, because such time estimates for public transit are not readily available. 
+
+Finally, if we had to conduct an experiment testing the relationship between public transit  and taxi rides, we survey taxi customers on their choices  with questions like (1) What routes do they most frequently travel by taxi? (2) Why do they not they not take the subway. Such a survey would provide meaningful insight into consumer behavior and help focus the analysis of the taxi data.
+
+
+
+
+```{r, eval = FALSE, echo = FALSE}
+# add to tips section
+
+data  <-  taxi
+variable <- taxi$tip_pct
+lat_type <- "pickup"
+data$variable <- variable
+GRID_RESOLUTION <-  2
+title  <-  "Average Tip Percentage by Region"
+varname  <-  "Tip Percentage"
+MINLAT  <-  40.71
+MAXLAT  <-  40.760
+MINLONG  <-  -74.01
+MAXLONG <-  -73.975
+MINRIDES  <-  30
+
+
+  if(lat_type == "pickup") {
+    # Select all taxi rides whose pickup was within specified region. Stores 
+    # these rides to a new data frame 'pos'
+    pos <- filter(data, pickup_longitude < MAXLONG, pickup_longitude > MINLONG, 
+                  pickup_latitude < MAXLAT, pickup_latitude > MINLAT) 
+    # Remove all rows with dropoff longitude or latitude equal to 0
+    pos <- filter(pos, dropoff_longitude != 0, dropoff_latitude!= 0) 
+    # Remove all rows where pickup and dropoff locations are the same
+    pos <- filter(pos, dropoff_longitude != pickup_longitude, 
+                  dropoff_latitude != pickup_latitude) 
+    # Cut latitude into bins
+    pos$lat_region <- cut(pos$pickup_latitude,GRID_RESOLUTION) 
+    # Cut longitude into bins
+    pos$long_region <- cut(pos$pickup_longitude,GRID_RESOLUTION) 
+  } 
+  
+  if (lat_type == "dropoff") {
+    pos <- filter(data, dropoff_longitude < MAXLONG, dropoff_longitude > MINLONG, 
+                  dropoff_latitude < MAXLAT, dropoff_latitude > MINLAT) 
+    pos <- filter(pos, dropoff_longitude != 0, dropoff_latitude!= 0) 
+    pos <- filter(pos, dropoff_longitude != pickup_longitude, dropoff_latitude != pickup_latitude)
+    pos$lat_region <- cut(pos$dropoff_latitude,GRID_RESOLUTION)
+    pos$long_region <- cut(pos$dropoff_longitude,GRID_RESOLUTION)
+  }
+  
+  # Groups data in 'pos' by 'lat_region' and 'long_region' (region on the grid) 
+  # Calculates number of rides being picked up in each region ('count') and the 
+  # average direction traveled for each taxi rides beginning in each grid 
+  # (long_dir_avg, lat_dir_avg)
+  grouped <- group_by(pos, lat_region, long_region) %>% 
+    summarize(count = n(), var = mean(variable)) 
+
+  temp <-  grouped$lat_region
+  temp <- gsub("\\(", "", temp)
+  temp <- gsub("\\]", "", temp)
+  temp <- strsplit(temp, ",")
+  temp <- unlist(temp)
+  temp <- as.numeric(temp)
+  grouped$max_lat <- temp[2*1:nrow(grouped)] # list of latitude upper bounds
+  grouped$min_lat <- temp[2*1:nrow(grouped)-1] # listof latitude lower bounds
+  grouped$avg_lat <- 0.5*(grouped$max_lat + grouped$min_lat)
+  
+  temp <-  grouped$long_region
+  temp <- gsub("\\(", "", temp)
+  temp <- gsub("\\]", "", temp)
+  temp <- strsplit(temp, ",")
+  temp <- unlist(temp)
+  temp <- as.numeric(temp)
+  grouped$max_long <- temp[2*1:nrow(grouped)] # list of longitude upper bounds
+  grouped$min_long <- temp[2*1:nrow(grouped)-1] # listof longitude lower bounds
+  grouped$avg_long <- 0.5*(grouped$max_long + grouped$min_long)
+  grouped$var <- as.factor(ceiling(grouped$var))
+   # Load Google Map of desired region
+ map <- get_googlemap(center = c(lon = cent_long, lat = cent_lat), zoom = 12, maptype = "terrain", style = 'feature:all|element:labels|visibility:off') 
+  
+  ggmap(map) + 
+    geom_rect(aes(x = min_long, y = max_long, xmin = min_long, xmax = max_long, 
+                  ymin = min_lat, ymax = max_lat, fill = var), data = filter(grouped, count > MINRIDES), alpha = 0.2) + 
+    labs(title = title, x = expression(italic("Longitude") ~ "(degrees)"), y = 
+           expression(italic("Latitude") ~ "(degrees)")) +
+    geom_point(aes(x=cent_long, y = cent_lat), colour = "black", size = 3)
+```
 
 
 ## Code Appendix
@@ -1002,3 +1190,4 @@ indicate different travel speeds of taxis.
 ```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
 
 ```
+
